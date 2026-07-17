@@ -155,37 +155,47 @@ def simulate_chat_api(chat: ChatInput):
             import re
             msg_lower = msg.lower()
             
-            # Nhận diện số tiền (k, tr, hoặc số thường)
-            amount_match = re.search(r'(\d+)\s*(k|tr|triệu|đ|dong|đồng)?', msg_lower)
+            # Nhận diện số tiền (ưu tiên các số đi kèm đơn vị k, tr, triệu, củ, đồng...)
+            # Hỗ trợ số thực (ví dụ: 1.5tr, 1,5tr) và đơn vị củ/cu
+            msg_normalized = msg_lower.replace(",", ".")
+            matches_with_unit = re.findall(r'(\d+(?:\.\d+)?)\s*(k|tr|triệu|trieu|đ|dong|đồng|cu|củ)', msg_normalized)
             amount = 0.0
-            if amount_match:
-                val = float(amount_match.group(1))
-                unit = amount_match.group(2)
+            if matches_with_unit:
+                val = float(matches_with_unit[0][0])
+                unit = matches_with_unit[0][1]
                 if unit in ['k']:
                     amount = val * 1000
-                elif unit in ['tr', 'triệu']:
+                elif unit in ['tr', 'triệu', 'trieu', 'cu', 'củ']:
                     amount = val * 1000000
                 else:
                     amount = val
+            else:
+                # Nếu không tìm thấy đơn vị, lấy số đầu tiên trong câu
+                amount_match = re.search(r'(\d+(?:\.\d+)?)', msg_normalized)
+                if amount_match:
+                    amount = float(amount_match.group(1))
                     
             # Nhận diện loại giao dịch
             tx_type = "chi"
-            if any(w in msg_lower for w in ["thu", "lương", "nhận", "kiếm", "thưởng", "cộng"]):
+            if any(re.search(r'\b' + re.escape(w) + r'\b', msg_lower) for w in ["thu", "lương", "nhận", "kiếm", "thưởng", "cộng"]):
                 tx_type = "thu"
                 
             # Nhận diện category bằng cả văn bản có dấu và không dấu
             msg_no_accent = remove_accents(msg_lower)
             category = "Khác"
             
-            if any(w in msg_lower for w in ["ăn", "uống", "phở", "bánh", "cơm", "lẩu", "trưa", "sáng", "tối"]) or any(w in msg_no_accent for w in ["an", "uong", "pho", "banh", "com", "lau", "trua", "sang", "toi", "cafe"]):
+            def has_keyword(text: str, keywords: list) -> bool:
+                return any(re.search(r'\b' + re.escape(kw) + r'\b', text) for kw in keywords)
+            
+            if has_keyword(msg_lower, ["ăn", "uống", "phở", "bánh", "cơm", "lẩu", "trưa", "sáng", "tối"]) or has_keyword(msg_no_accent, ["an", "uong", "pho", "banh", "com", "lau", "trua", "sang", "toi", "cafe"]):
                 category = "Ăn uống"
-            elif any(w in msg_lower for w in ["xe", "xăng", "grab", "taxi", "di chuyển", "đi lại"]) or any(w in msg_no_accent for w in ["xe", "xang", "grab", "taxi", "di chuyen", "di lai"]):
+            elif has_keyword(msg_lower, ["xe", "xăng", "grab", "taxi", "di chuyển", "đi lại"]) or has_keyword(msg_no_accent, ["xe", "xang", "grab", "taxi", "di chuyen", "di lai"]):
                 category = "Di chuyển"
-            elif any(w in msg_lower for w in ["lương", "thu nhập"]) or any(w in msg_no_accent for w in ["luong", "thu nhap"]):
+            elif has_keyword(msg_lower, ["lương", "thu nhập"]) or has_keyword(msg_no_accent, ["luong", "thu nhap"]):
                 category = "Lương"
-            elif any(w in msg_lower for w in ["học", "sách", "khoá học"]) or any(w in msg_no_accent for w in ["hoc", "sach", "khoa hoc"]):
+            elif has_keyword(msg_lower, ["học", "sách", "khoá học"]) or has_keyword(msg_no_accent, ["hoc", "sach", "khoa hoc"]):
                 category = "Học tập"
-            elif any(w in msg_lower for w in ["mua", "sắm", "shopee", "quần", "áo"]) or any(w in msg_no_accent for w in ["mua", "sam", "shopee", "quan", "ao"]):
+            elif has_keyword(msg_lower, ["mua", "sắm", "shopee", "quần", "áo", "iphone", "điện thoại"]) or has_keyword(msg_no_accent, ["mua", "sam", "shopee", "quan", "ao", "iphone", "dien thoai"]):
                 category = "Mua sắm"
                 
             description = msg

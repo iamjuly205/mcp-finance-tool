@@ -35,51 +35,69 @@ def parse_with_gemini(message: str):
     categories_list = ["Ăn uống", "Di chuyển", "Học tập", "Mua sắm", "Lương", "Khác"]
     
     prompt = f"""
-Bạn là robot trợ lý tài chính thông minh Xiaozhi. Nhiệm vụ của bạn là phân tích câu nói ghi chép giao dịch thu chi của người dùng và trích xuất thành đối tượng JSON chuẩn.
-Hệ thống yêu cầu bạn xử lý hoàn hảo cả câu nói có dấu hoặc KHÔNG DẤU tiếng Việt (ví dụ: "an banh mi", "nhan luong", "di grab", "mua do shopee").
+Bạn là robot trợ lý tài chính thông minh Xiaozhi. Nhiệm vụ của bạn là phân tích câu lệnh ghi chép tài chính của người dùng và trích xuất thành đối tượng JSON chuẩn.
 
-Hãy phân tích kỹ ngữ nghĩa của câu để tránh nhầm lẫn giữa THU (thu nhập, nhận tiền, cộng tiền, lương về...) và CHI (tiêu tiền, trả tiền, đi xe, mua đồ...).
-Ví dụ về câu KHÔNG DẤU cần phân loại đúng:
-- "chi 20k000 an banh mi" -> CHI, category: "Ăn uống", amount: 20000, description: "Ăn bánh mì"
-- "an trua het 55k" -> CHI, category: "Ăn uống", amount: 55000, description: "Ăn trưa"
-- "di xe grab het 30k" -> CHI, category: "Di chuyển", amount: 30000, description: "Đi xe Grab"
-- "nhan luong 15tr" -> THU, category: "Lương", amount: 15000000, description: "Nhận lương"
-- "mua do shopee 200k" -> CHI, category: "Mua sắm", amount: 200000, description: "Mua đồ Shopee"
+### QUY TẮC PHÂN TÍCH QUAN TRỌNG:
 
-Danh mục chi tiêu hợp lệ (Bắt buộc trường "category" trong JSON phải trả về chính xác một trong các chuỗi sau có đầy đủ dấu tiếng Việt):
-- "Ăn uống": Đồ ăn, nước uống, cafe, bún phở, bánh mì, cơm trưa, đi nhậu, trà sữa... (không dấu: "an uong", "cafe", "banh mi", "pho", "com")
-- "Di chuyển": Grab, taxi, xăng xe, vé máy bay, xe bus, bảo dưỡng xe, đi xe... (không dấu: "di chuyen", "xang", "xe", "grab", "taxi")
-- "Học tập": Sách vở, học phí, khoá học, tài liệu giảng dạy, mua sách... (không dấu: "hoc tap", "hoc phi", "sach", "khoa hoc")
-- "Mua sắm": Quần áo, mua sắm online, Shopee, Lazada, Tiki, đồ dùng gia đình... (không dấu: "mua sam", "shopee", "quan ao")
-- "Lương": Lương tháng, thưởng dự án, làm thêm, nhận lương... (không dấu: "luong", "nhan luong", "thuong")
-- "Khác": Tất cả các trường hợp không thuộc các nhóm trên (ví dụ: trả nợ, cho vay, từ thiện, tiền nhà, chuyển tiền...). (không dấu: "khac", "tra no", "cho vay")
+1. **Xử lý tiếng Việt KHÔNG DẤU**:
+   Hệ thống yêu cầu bạn xử lý hoàn hảo cả câu nói có dấu hoặc KHÔNG DẤU tiếng Việt (ví dụ: "an com 50k", "nhan luong 12tr", "di xe grab 30k"). Hãy khôi phục đúng dấu tiếng Việt cho trường "description".
 
-Loại giao dịch (transaction_type):
-- "thu": Nhận tiền, cộng tiền, kiếm được tiền, lương về.
-- "chi": Tiêu tiền ra, thanh toán, mất tiền.
+2. **Xử lý câu lệnh KHÔNG RÕ THÔNG TIN / CHUNG CHUNG**:
+   - Nếu câu lệnh chỉ có hành động chi và số tiền (ví dụ: "tieu 50k", "chi 100.000", "mat 200k", "-150k") -> Phân loại vào danh mục "Khác", đặt `transaction_type` = "chi" và `description` = "Chi tiêu chung".
+   - Nếu câu lệnh chỉ có hành động thu và số tiền (ví dụ: "nhan 5tr", "co them 1tr", "duoc cho 200k", "+500k") -> Phân loại vào danh mục "Khác", đặt `transaction_type` = "thu" và `description` = "Thu nhập chung".
+   - Nếu có mô tả hành động cụ thể nhưng không khớp danh mục chuẩn nào (ví dụ: "dong tien nha 3tr", "tra no 1tr", "cho vay 500k") -> Phân loại vào danh mục "Khác", giữ nguyên mô tả.
 
-Số tiền (amount): Trích xuất và quy đổi về con số thực tế:
-- k, nghìn, ng: nhân 1.000 (Ví dụ: "50k" -> 50000, "20k000" -> 20000)
-- tr, triệu, trieu: nhân 1.000.000 (Ví dụ: "10tr" -> 10000000)
-- đ, đồng, vnd: lấy số tương ứng.
+3. **Phân loại Danh mục (Bắt buộc trường "category" phải trả về chính xác 1 trong 6 chuỗi có dấu dưới đây)**:
+   - "Ăn uống": Đồ ăn, thức uống, ăn sáng, cơm trưa, đi nhậu, trà sữa, cafe, mua bún phở, bánh mì... (Từ khóa không dấu: "an uong", "an sang", "com trua", "di nhau", "tra sua", "cafe", "pho", "banh mi", "com")
+   - "Di chuyển": Grab, taxi, đổ xăng, sửa xe, xe bus, vé máy bay, vé tàu, đi lại... (Từ khóa không dấu: "di chuyen", "grab", "taxi", "do xang", "sua xe", "xe bus", "ve may bay", "ve tau", "di lai")
+   - "Học tập": Mua sách vở, học phí, đóng học, mua khóa học, dụng cụ học tập... (Từ khóa không dấu: "hoc tap", "mua sach", "hoc phi", "dong hoc", "khoa hoc")
+   - "Mua sắm": Quần áo, giày dép, mua đồ Shopee/Lazada/Tiki, mua sắm siêu thị, đồ gia dụng, mỹ phẩm... (Từ khóa không dấu: "mua sam", "quan ao", "giay dep", "shopee", "lazada", "tiki", "sieu thi", "do gia dung")
+   - "Lương": Lương tháng, nhận lương, thưởng dự án, tiền công làm thêm... (Từ khóa không dấu: "luong", "nhan luong", "thuong", "tien cong")
+   - "Khác": Tiền nhà, tiền điện nước, trả nợ, cho vay, từ thiện, rút tiền, gửi tiền, các giao dịch không rõ danh mục hoặc không khớp 5 danh mục trên.
 
-Mô tả (description): Viết lại nội dung giao dịch bằng tiếng Việt CÓ DẤU chuẩn chỉnh, viết hoa chữ cái đầu (Ví dụ: "Đi grab đi làm" cho "di grab di lam").
+4. **Số tiền (amount)**:
+   Quy đổi tất cả các cách viết tắt về số thực tế:
+   - "k", "nghìn", "ng", "ngan": nhân 1.000 (ví dụ: "50k" -> 50000, "20k000" -> 20000)
+   - "tr", "triệu", "trieu": nhân 1.000.000 (ví dụ: "15tr" -> 15000000, "1tr5" hoặc "1.5tr" -> 15000000)
+   - "chục": nhân 10.000 (ví dụ: "3 chục" -> 30000)
 
-Hãy trả về một chuỗi JSON duy nhất định dạng như sau, không có text bao ngoài, không dùng block markdown:
-{{
-  "is_transaction": true/false (chỉ chọn true nếu đây là câu lệnh ghi nhận một khoản tiền giao dịch cụ thể),
-  "transaction_type": "thu" hoặc "chi",
-  "amount": số tiền (float),
-  "category": "Danh mục khớp chính xác từ danh sách trên (ví dụ: Ăn uống, Di chuyển, Học tập, Mua sắm, Lương, Khác)",
-  "description": "Mô tả có dấu tiếng Việt"
-}}
+5. **Đánh giá tính hợp lệ (is_transaction)**:
+   Chỉ chọn `true` nếu câu lệnh chứa số tiền hợp lệ và mô tả hành động ghi nhận tài chính. Nếu là câu chào hỏi, hỏi thông tin chung (ví dụ: "hello", "báo cáo tháng này", "xem hạn mức") -> Thiết lập `is_transaction` = false.
 
-Câu lệnh cần phân tích: "{message}"
+---
+
+### CÁC VÍ DỤ MINH HỌA (FEW-SHOT EXAMPLES):
+
+- **Input**: "an trua het 55k"
+  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 55000, "category": "Ăn uống", "description": "Ăn trưa"}}
+
+- **Input**: "tieu het 150k"
+  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 150000, "category": "Khác", "description": "Chi tiêu chung"}}
+
+- **Input**: "nhan luong 15tr"
+  **Output**: {{"is_transaction": true, "transaction_type": "thu", "amount": 15000000, "category": "Lương", "description": "Nhận lương"}}
+
+- **Input**: "co them 1.2tr"
+  **Output**: {{"is_transaction": true, "transaction_type": "thu", "amount": 12000000, "category": "Khác", "description": "Thu nhập chung"}}
+
+- **Input**: "di grab di lam het 30k"
+  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 30000, "category": "Di chuyển", "description": "Đi Grab đi làm"}}
+
+- **Input**: "dong tien nuoc 350k"
+  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 350000, "category": "Khác", "description": "Đóng tiền nước"}}
+
+- **Input**: "chào robot"
+  **Output**: {{"is_transaction": false, "transaction_type": "chi", "amount": 0, "category": "Khác", "description": ""}}
+
+---
+
+Hãy phân tích câu lệnh sau và trả về một chuỗi JSON duy nhất, không có văn bản bao ngoài, không dùng block markdown ```json:
+"{message}"
 """
     try:
         import google.generativeai as genai
-        # Sử dụng model gemini-1.5-flash để phản hồi nhanh
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Sử dụng model gemini-2.5-flash để phản hồi nhanh
+        model = genai.GenerativeModel("gemini-2.5-flash")
         
         # Enforce JSON output format
         response = model.generate_content(
