@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Cấu hình các thư viện phụ thuộc cho dự án Xiaozhi Finance MCP
 
 # MCP Server
@@ -13,3 +14,25 @@ google-generativeai==0.8.6
 # Testing
 pytest==8.4.2
 httpx==0.28.1
+=======
+# Requirements cho dự án MCP Finance Tool
+
+# Core dependencies
+fastmcp>=0.1.0
+sqlite3  # Built-in Python
+
+# Testing
+pytest>=8.0.0
+pytest-mock>=3.14.0
+
+# Optional: Gemini Agent (nếu dùng)
+google-generativeai>=0.8.0
+
+# Development & Utils
+black>=24.0.0      # Code formatter
+isort>=5.0.0       # Import sorter
+flake8>=7.0.0      # Linter
+
+# For MCP / Stdio
+typing-extensions>=4.0.0
+>>>>>>> 7ee10482507cba0dfd66930c6d545657b0ec220e
