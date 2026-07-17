@@ -1,0 +1,15 @@
+# Cấu hình các thư viện phụ thuộc cho dự án Xiaozhi Finance MCP
+
+# MCP Server
+mcp==1.28.1
+
+# Web Visualizer Backend & APIs
+fastapi==0.139.0
+uvicorn==0.49.0
+pydantic==2.12.4
+python-dotenv==1.0.0
+google-generativeai==0.8.6
+
+# Testing
+pytest==8.4.2
+httpx==0.28.1
