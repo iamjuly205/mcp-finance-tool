@@ -1,40 +1,73 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xiaozhi Finance MCP Visualizer</title>
+    <title>Xiaozhi Finance MCP - Bảng Điều Khiển Tài Chính</title>
     <!-- Google Fonts: Outfit -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- FontAwesome for icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <!-- FontAwesome for modern icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2.1">
 </head>
+
 <body>
-    <!-- Mesh Gradients for background -->
+    <!-- Background Animated Mesh Gradients -->
     <div class="mesh-gradient bg-1"></div>
     <div class="mesh-gradient bg-2"></div>
     <div class="mesh-gradient bg-3"></div>
 
+    <!-- Mobile Top Navigation Bar -->
+    <div class="mobile-topbar">
+        <div class="brand">
+            <div class="brand-logo">
+                <i class="fa-solid fa-wallet"></i>
+            </div>
+            <h2>Xiaozhi Pay</h2>
+        </div>
+        <button class="mobile-menu-btn" id="mobile-menu-toggle" aria-label="Toggle menu">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Main Mobile Overlay Backdrop -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
     <div class="app-container">
         <!-- Sidebar Navigation -->
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
             <div class="brand">
                 <div class="brand-logo">
                     <i class="fa-solid fa-wallet"></i>
                 </div>
-                <h2>Xiaozhi Pay</h2>
+                <div>
+                    <h2>Xiaozhi Pay</h2>
+                    <span class="brand-tagline">Finance MCP v2.0</span>
+                </div>
             </div>
-            
+
             <nav class="nav-menu">
-                <a href="#" class="nav-item active"><i class="fa-solid fa-chart-pie"></i> Tổng quan</a>
-                <a href="#budget-section" class="nav-item"><i class="fa-solid fa-piggy-bank"></i> Ngân sách</a>
-                <a href="#transaction-section" class="nav-item"><i class="fa-solid fa-list-ul"></i> Giao dịch</a>
-                <a href="#sandbox-section" class="nav-item"><i class="fa-solid fa-terminal"></i> MCP Console</a>
+                <a href="#overview-section" class="nav-item active" id="nav-overview">
+                    <i class="fa-solid fa-chart-pie"></i> <span>Tổng quan</span>
+                </a>
+                <a href="#budget-section" class="nav-item" id="nav-budget">
+                    <i class="fa-solid fa-piggy-bank"></i> <span>Ngân sách</span>
+                </a>
+                <a href="#transaction-section" class="nav-item" id="nav-transactions">
+                    <i class="fa-solid fa-receipt"></i> <span>Giao dịch</span>
+                </a>
+                <a href="#keyword-section" class="nav-item" id="nav-keywords">
+                    <i class="fa-solid fa-key"></i> <span>Từ khóa hệ thống</span>
+                </a>
+                <a href="#sandbox-section" class="nav-item" id="nav-sandbox">
+                    <i class="fa-solid fa-robot"></i> <span>MCP AI Console</span>
+                </a>
             </nav>
 
             <div class="mcp-status-card">
@@ -48,123 +81,202 @@
 
         <!-- Main Dashboard Content -->
         <main class="main-content">
-            <!-- Header -->
-            <header class="content-header">
-                <div>
+            <!-- Header Bar -->
+            <header class="content-header" id="overview-section">
+                <div class="header-title-block">
                     <h1>Bảng Điều Khiển Tài Chính</h1>
-                    <p class="subtitle">Trực quan hóa hoạt động tài chính từ Xiaozhi Finance MCP</p>
+                    <p class="subtitle">Quản lý thu chi & Trực quan hóa dữ liệu từ Xiaozhi Finance MCP Server</p>
                 </div>
-                <div class="user-profile">
-                    <div class="avatar">XZ</div>
-                    <span>Xiaozhi Admin</span>
+
+                <div class="header-actions">
+                    <!-- Quick Global Search -->
+                    <div class="header-search-wrapper">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="header-search-input" placeholder="Tìm giao dịch, từ khóa..."
+                            autocomplete="off">
+                    </div>
+
+                    <!-- Privacy Toggle Button -->
+                    <button class="btn btn-icon btn-glass" id="btn-toggle-privacy" title="Ẩn/Hiện số dư tài khoản">
+                        <i class="fa-solid fa-eye" id="privacy-icon"></i>
+                    </button>
+
+                    <!-- Quick Add Button -->
+                    <button class="btn btn-primary" id="btn-quick-add-tx">
+                        <i class="fa-solid fa-plus"></i> <span class="hide-mobile">Giao dịch mới</span>
+                    </button>
+
+                    <!-- User Profile -->
+                    <div class="user-profile">
+                        <div class="avatar">XZ</div>
+                        <div class="user-info hide-mobile">
+                            <span class="user-name">Xiaozhi Admin</span>
+                            <span class="user-role">Superuser</span>
+                        </div>
+                    </div>
                 </div>
             </header>
+            <!-- Tab 1: Overview -->
+            <div id="tab-overview" class="tab-content active">
+                <!-- Quick Stats Grid (4 Cards Balanced) -->
+                <section class="stats-grid">
+                    <!-- Stat 1: Total Income -->
+                    <div class="stat-card glass-panel">
+                        <div class="stat-icon income-icon">
+                            <i class="fa-solid fa-arrow-trend-up"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-label">Tổng Thu Nhập</span>
+                            <h2 id="total-income" class="stat-value text-privacy">0đ</h2>
+                            <span class="stat-desc text-green"><i class="fa-solid fa-circle-check"></i> Trong thời gian
+                                chọn</span>
+                        </div>
+                    </div>
 
-            <!-- Quick Stats Grid -->
-            <section class="stats-grid">
-                <div class="stat-card glass-panel">
-                    <div class="stat-icon income-icon">
-                        <i class="fa-solid fa-arrow-trend-up"></i>
+                    <!-- Stat 2: Total Expense -->
+                    <div class="stat-card glass-panel">
+                        <div class="stat-icon expense-icon">
+                            <i class="fa-solid fa-arrow-trend-down"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-label">Tổng Chi Tiêu</span>
+                            <h2 id="total-expense" class="stat-value text-privacy">0đ</h2>
+                            <span class="stat-desc text-red"><i class="fa-solid fa-chart-line-down"></i> Trong thời gian
+                                chọn</span>
+                        </div>
                     </div>
-                    <div class="stat-details">
-                        <span class="stat-label">Tổng Thu Nhập</span>
-                        <h2 id="total-income" class="stat-value">0đ</h2>
-                        <span class="stat-desc text-green"><i class="fa-solid fa-caret-up"></i> Trong tháng hiện tại</span>
-                    </div>
-                </div>
 
-                <div class="stat-card glass-panel">
-                    <div class="stat-icon expense-icon">
-                        <i class="fa-solid fa-arrow-trend-down"></i>
+                    <!-- Stat 3: Net Balance -->
+                    <div class="stat-card glass-panel">
+                        <div class="stat-icon balance-icon">
+                            <i class="fa-solid fa-wallet"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-label">Số Dư Khả Dụng</span>
+                            <h2 id="net-balance" class="stat-value text-privacy">0đ</h2>
+                            <span class="stat-desc text-blue"><i class="fa-solid fa-scale-balanced"></i> Thu nhập trừ
+                                Chi tiêu</span>
+                        </div>
                     </div>
-                    <div class="stat-details">
-                        <span class="stat-label">Tổng Chi Tiêu</span>
-                        <h2 id="total-expense" class="stat-value">0đ</h2>
-                        <span class="stat-desc text-red"><i class="fa-solid fa-caret-down"></i> Trong tháng hiện tại</span>
-                    </div>
-                </div>
 
-                <div class="stat-card glass-panel">
-                    <div class="stat-icon balance-icon">
-                        <i class="fa-solid fa-scale-balanced"></i>
+                    <!-- Stat 4: Transaction Summary -->
+                    <div class="stat-card glass-panel">
+                        <div class="stat-icon count-icon">
+                            <i class="fa-solid fa-list-check"></i>
+                        </div>
+                        <div class="stat-details">
+                            <span class="stat-label">Số Lượng Giao Dịch</span>
+                            <h2 id="total-tx-count" class="stat-value">0</h2>
+                            <span class="stat-desc text-purple" id="avg-tx-desc"><i class="fa-solid fa-calculator"></i>
+                                Giao dịch ghi nhận</span>
+                        </div>
                     </div>
-                    <div class="stat-details">
-                        <span class="stat-label">Số Dư Khả Dụng</span>
-                        <h2 id="net-balance" class="stat-value">0đ</h2>
-                        <span class="stat-desc text-blue"><i class="fa-solid fa-info-circle"></i> Tổng thu - Tổng chi</span>
-                    </div>
-                </div>
-            </section>
+                </section>
 
-            <!-- Middle Layout: Wallet Card & Charts & Budgets -->
-            <div class="dashboard-grid">
-                <!-- Left: Wallet Card & Budgets -->
-                <div class="dashboard-col-left">
-                    <!-- Digital Wallet Card -->
-                    <div class="wallet-card-container">
-                        <div class="digital-card" id="digital-wallet-card">
-                            <div class="card-glass-glow"></div>
-                            <div class="card-header">
-                                <span class="card-brand"><i class="fa-solid fa-microchip"></i> XZ-Finance</span>
-                                <span class="card-type">PREMIUM</span>
-                            </div>
-                            <div class="card-chip"></div>
-                            <div class="card-balance-block">
-                                <span class="card-balance-label">SỐ DƯ TÀI KHOẢN</span>
-                                <h3 id="card-balance" class="card-balance-val">0đ</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="card-holder">
-                                    <span class="lbl">CHỦ THẺ</span>
-                                    <span class="val">XIAOZHI USER</span>
+                <div class="dashboard-grid">
+                    <div class="dashboard-col-left">
+                        <!-- Digital Premium Wallet Card -->
+                        <div class="wallet-card-container">
+                            <div class="digital-card" id="digital-wallet-card">
+                                <div class="card-glass-glow"></div>
+                                <div class="card-header">
+                                    <span class="card-brand"><i class="fa-solid fa-microchip"></i> Xiaozhi Pay</span>
+                                    <span class="card-type"><i class="fa-solid fa-crown text-amber"></i> PREMIUM</span>
                                 </div>
-                                <div class="card-expiry">
-                                    <span class="lbl">HẠN DÙNG</span>
-                                    <span class="val">12/30</span>
+                                <div class="card-middle">
+                                    <div class="card-chip"></div>
+                                    <span class="card-number">•••• •••• •••• 8888</span>
+                                </div>
+                                <div class="card-balance-block">
+                                    <span class="card-balance-label">SỐ DƯ TÀI KHOẢN TỔNG</span>
+                                    <h3 id="card-balance" class="card-balance-val text-privacy">0đ</h3>
+                                </div>
+                                <div class="card-footer">
+                                    <div class="card-holder">
+                                        <span class="lbl">CHỦ TÀI KHOẢN</span>
+                                        <span class="val">XIAOZHI USER</span>
+                                    </div>
+                                    <div class="card-expiry">
+                                        <span class="lbl">HẠN THẺ</span>
+                                        <span class="val">12/30</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Budget Tracker -->
-                    <div class="glass-panel content-card" id="budget-section">
-                        <div class="card-title-row">
-                            <h3><i class="fa-solid fa-piggy-bank text-amber"></i> Hạn Mức Ngân Sách Tháng</h3>
-                            <button class="btn btn-icon" id="open-budget-modal" title="Thiết lập ngân sách mới"><i class="fa-solid fa-plus"></i></button>
-                        </div>
-                        <div class="budget-list" id="budget-container">
-                            <!-- Dynamically populated budget items -->
-                            <div class="empty-state">Chưa thiết lập hạn mức nào.</div>
+                    <div class="dashboard-col-right" style="flex: 1 1 60%;">
+                        <!-- Analytics Dual Chart Container -->
+                        <div class="glass-panel content-card">
+                            <div class="card-title-row">
+                                <h3><i class="fa-solid fa-chart-column text-blue"></i> Phân Tích Tài Chính</h3>
+                                <!-- Chart Switcher Tabs -->
+                                <div class="chart-tab-group">
+                                    <button class="chart-tab-btn active" id="btn-chart-donut">
+                                        <i class="fa-solid fa-chart-pie"></i> Danh mục chi
+                                    </button>
+                                    <button class="chart-tab-btn" id="btn-chart-bar">
+                                        <i class="fa-solid fa-chart-bar"></i> Thu vs Chi
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Donut View -->
+                            <div class="chart-wrapper" id="chart-view-donut">
+                                <canvas id="expense-donut-chart"></canvas>
+                            </div>
+
+                            <!-- Bar View -->
+                            <div class="chart-wrapper hidden" id="chart-view-bar">
+                                <canvas id="cashflow-bar-chart"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Right: Chart & Transaction History -->
-                <div class="dashboard-col-right">
-                    <!-- Analytics Chart -->
-                    <div class="glass-panel content-card">
-                        <h3><i class="fa-solid fa-chart-line text-blue"></i> Phân Tích Danh Mục Chi Tiêu</h3>
-                        <div class="chart-wrapper">
-                            <canvas id="expense-donut-chart"></canvas>
+            <!-- Tab 2: Budgets -->
+            <div id="tab-budget" class="tab-content">
+                <div class="glass-panel content-card" id="budget-section" style="margin-bottom: 2.5rem;">
+                    <div class="card-title-row">
+                        <h3><i class="fa-solid fa-piggy-bank text-amber"></i> Hạn Mức Ngân Sách Tháng</h3>
+                        <button class="btn btn-secondary btn-sm" id="open-budget-modal"
+                            title="Thiết lập hạn mức ngân sách mới">
+                            <i class="fa-solid fa-plus"></i> Đặt hạn mức
+                        </button>
+                    </div>
+                    <div class="budget-list" id="budget-container">
+                        <!-- Dynamically populated budget items -->
+                        <div class="empty-state">Chưa thiết lập hạn mức nào.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Transactions -->
+            <div id="tab-transactions" class="tab-content">
+                <div class="glass-panel content-card" id="transaction-section" style="margin-bottom: 2.5rem;">
+                    <div class="card-title-row">
+                        <h3><i class="fa-solid fa-history text-purple"></i> Lịch Sử Giao Dịch</h3>
+                        <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" id="btn-undo" title="Hoàn tác giao dịch vừa thêm">
+                                <i class="fa-solid fa-rotate-left"></i> Hoàn tác
+                            </button>
+                            <button class="btn btn-danger btn-sm" id="btn-clear-history"
+                                title="Xóa toàn bộ lịch sử giao dịch"
+                                style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #ef4444; padding: 6px 12px; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+                                <i class="fa-solid fa-trash-can"></i> Xóa lịch sử
+                            </button>
+                            <button class="btn btn-primary btn-sm" id="open-tx-modal">
+                                <i class="fa-solid fa-plus"></i> Thêm giao dịch
+                            </button>
                         </div>
                     </div>
 
-                    <!-- Recent Transactions -->
-                    <div class="glass-panel content-card" id="transaction-section">
-                        <div class="card-title-row">
-                            <h3><i class="fa-solid fa-history text-purple"></i> Lịch Sử Giao Dịch Gần Đây</h3>
-                            <div class="card-actions">
-                                <button class="btn btn-secondary btn-sm" id="btn-undo" title="Hoàn tác giao dịch vừa thêm">
-                                    <i class="fa-solid fa-rotate-left"></i> Hoàn tác
-                                </button>
-                                <button class="btn btn-primary btn-sm" id="open-tx-modal">
-                                    <i class="fa-solid fa-plus"></i> Thêm giao dịch
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="transaction-filter-bar">
-                            <span class="filter-label">Bộ lọc thời gian:</span>
+                    <!-- Multi-filter bar -->
+                    <div class="transaction-filter-bar">
+                        <!-- Time Filter -->
+                        <div class="filter-group">
+                            <span class="filter-label"><i class="fa-regular fa-calendar"></i> Thời gian:</span>
                             <div class="filter-options">
                                 <button class="filter-btn active" data-range="this_month">Tháng này</button>
                                 <button class="filter-btn" data-range="this_week">Tuần này</button>
@@ -173,64 +285,155 @@
                             </div>
                         </div>
 
-                        <div class="table-wrapper">
-                            <table class="transaction-table">
-                                <thead>
-                                    <tr>
-                                        <th>Thời gian</th>
-                                        <th>Hạng mục</th>
-                                        <th>Loại</th>
-                                        <th>Mô tả</th>
-                                        <th class="text-right">Số tiền</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="transaction-rows">
-                                    <!-- Dynamic rows -->
-                                </tbody>
-                            </table>
+                        <!-- Category & Type Filter Dropdowns -->
+                        <div class="filter-group-right">
+                            <select id="filter-type-select" class="filter-select">
+                                <option value="all">Tất cả loại (Thu & Chi)</option>
+                                <option value="chi">Chi tiêu (-)</option>
+                                <option value="thu">Thu nhập (+)</option>
+                            </select>
+
+                            <select id="filter-category-select" class="filter-select">
+                                <option value="all">Tất cả hạng mục</option>
+                                <option value="Ăn uống">Ăn uống</option>
+                                <option value="Di chuyển">Di chuyển</option>
+                                <option value="Học tập">Học tập</option>
+                                <option value="Mua sắm">Mua sắm</option>
+                                <option value="Lương">Lương</option>
+                                <option value="Khác">Khác</option>
+                            </select>
                         </div>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="table-wrapper">
+                        <table class="transaction-table">
+                            <thead>
+                                <tr>
+                                    <th>Thời gian</th>
+                                    <th>Hạng mục</th>
+                                    <th>Loại</th>
+                                    <th>Mô tả</th>
+                                    <th class="text-right">Số tiền</th>
+                                    <th class="text-center" style="width: 60px;">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transaction-rows">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
 
-            <!-- Bottom Section: MCP Chatbot Sandbox -->
-            <section class="glass-panel content-card sandbox-section" id="sandbox-section">
-                <h3><i class="fa-solid fa-terminal text-green"></i> MCP Interactive Sandbox (Giả Lập Nghiệp Vụ Robot)</h3>
-                <p class="card-subtitle">Hãy nhập các câu nói thường ngày (Ví dụ: "Hôm nay ăn trưa phở bò hết 55k", "Nhận lương 15tr") để xem cách Robot Xiaozhi biên dịch và gọi API MCP của hệ thống.</p>
-                
-                <div class="sandbox-grid">
-                    <!-- Chat panel -->
-                    <div class="sandbox-chat-panel">
-                        <div class="chat-header">
-                            <div class="bot-avatar"><i class="fa-solid fa-robot"></i></div>
-                            <div>
-                                <h4>Robot Xiaozhi Agent</h4>
-                                <span class="badge badge-green">Hoạt động</span>
-                            </div>
+            <!-- Tab 4: Keywords -->
+            <div id="tab-keywords" class="tab-content">
+                <section class="glass-panel content-card" id="keyword-section" style="margin-bottom: 2.5rem;">
+                    <div class="card-title-row">
+                        <div>
+                            <h3><i class="fa-solid fa-key text-blue"></i> Quản Lý Từ Khóa Phân Loại Tự Động</h3>
+                            <p class="card-subtitle" style="margin-bottom: 0;">Các từ khóa giúp Robot Xiaozhi tự động
+                                phát hiện danh mục khi bạn nhập hoặc nói tự do.</p>
                         </div>
-                        <div class="chat-messages" id="chat-messages-container">
-                            <div class="chat-bubble bot-bubble">
-                                Xin chào! Tôi là trợ lý tài chính Xiaozhi. Bạn hãy thử nói hoặc nhập giao dịch, tôi sẽ lưu trực tiếp vào cơ sở dữ liệu MCP.
-                            </div>
+                        <div class="card-actions">
+                            <input type="text" id="keyword-search-input" placeholder="Lọc từ khóa..."
+                                class="keyword-search-box">
+                            <button class="btn btn-primary btn-sm" id="open-keyword-modal">
+                                <i class="fa-solid fa-plus"></i> Thêm từ khóa
+                            </button>
                         </div>
-                        <form class="chat-input-area" id="chat-form">
-                            <input type="text" id="chat-input" placeholder="Nhập câu nói: 'Đi cafe hết 35k'..." required>
-                            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> Gửi</button>
-                        </form>
                     </div>
 
-                    <!-- MCP RPC Console -->
-                    <div class="sandbox-console-panel">
-                        <div class="console-header">
-                            <span>JSON-RPC 2.0 PROTOCOL TRACE</span>
-                            <button class="btn btn-icon btn-sm" id="btn-clear-console" title="Xóa logs"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                        <div class="console-output" id="console-logs">
-                            <div class="console-line info">[System] Sẵn sàng lắng nghe các lệnh JSON-RPC...</div>
+                    <div class="table-wrapper" style="max-height: 320px; overflow-y: auto; margin-top: 15px;">
+                        <table class="transaction-table">
+                            <thead>
+                                <tr>
+                                    <th>Từ khóa</th>
+                                    <th>Danh mục ánh xạ</th>
+                                    <th>Loại giao dịch</th>
+                                    <th class="text-center" style="width: 100px;">Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody id="keyword-rows">
+                                <!-- Dynamic keywords rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Tab 5: Sandbox / Console -->
+            <div id="tab-sandbox" class="tab-content">
+                <section class="glass-panel content-card sandbox-section" id="sandbox-section"
+                    style="margin-bottom: 2.5rem;">
+                    <div class="card-title-row">
+                        <div>
+                            <h3><i class="fa-solid fa-robot text-green"></i> MCP Interactive AI Sandbox (Trợ Lý Robot
+                                Xiaozhi)</h3>
+                            <p class="card-subtitle" style="margin-bottom: 0;">Nhập câu nói hàng ngày hoặc nhấp vào mẫu
+                                gợi ý bên dưới để thử nghiệm Robot biên dịch tự động sang MCP Tool Calls.</p>
                         </div>
                     </div>
-                </div>
-            </section>
+
+                    <!-- Quick Prompt Recommendation Pills -->
+                    <div class="prompt-pills-wrapper">
+                        <span class="pills-label"><i class="fa-solid fa-bolt text-amber"></i> Gợi ý nhanh:</span>
+                        <div class="prompt-pills">
+                            <button class="prompt-pill" data-prompt="Hôm nay ăn trưa phở bò 45k">"Ăn trưa phở bò
+                                45k"</button>
+                            <button class="prompt-pill" data-prompt="Đi xe Grab 35k">"Đi xe Grab 35k"</button>
+                            <button class="prompt-pill" data-prompt="Nhận lương tháng này 15tr">"Nhận lương
+                                15tr"</button>
+                            <button class="prompt-pill" data-prompt="Mua quần áo hết 350k">"Mua quần áo 350k"</button>
+                            <button class="prompt-pill" data-prompt="Đổ xăng xe máy 50k">"Đổ xăng 50k"</button>
+                        </div>
+                    </div>
+
+                    <div class="sandbox-grid">
+                        <!-- Chat Panel -->
+                        <div class="sandbox-chat-panel">
+                            <div class="chat-header">
+                                <div class="bot-avatar"><i class="fa-solid fa-robot"></i></div>
+                                <div>
+                                    <h4>Trợ lý Tài chính Xiaozhi</h4>
+                                    <span class="badge badge-green"><i class="fa-solid fa-circle"></i> Trực tuyến</span>
+                                </div>
+                            </div>
+                            <div class="chat-messages" id="chat-messages-container">
+                                <div class="chat-bubble bot-bubble">
+                                    Xin chào! Tôi là trợ lý tài chính Xiaozhi. Bạn có thể gõ hoặc nói giao dịch (ví dụ:
+                                    <i>"Vừa uống trà sữa hết 35k"</i>), tôi sẽ ghi nhận trực tiếp vào hệ thống.
+                                </div>
+                            </div>
+                            <form class="chat-input-area" id="chat-form">
+                                <button type="button" class="btn-mic" id="btn-mic-record"
+                                    title="Nói qua Micro (Speech Recognition)">
+                                    <i class="fa-solid fa-microphone"></i>
+                                </button>
+                                <input type="text" id="chat-input" placeholder="Nhập câu nói: 'Đi cafe hết 35k'..."
+                                    required autocomplete="off">
+                                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i>
+                                    Gửi</button>
+                            </form>
+                        </div>
+
+                        <!-- MCP RPC Console Trace -->
+                        <div class="sandbox-console-panel">
+                            <div class="console-header">
+                                <span><i class="fa-solid fa-terminal text-green"></i> JSON-RPC 2.0 PROTOCOL TRACE</span>
+                                <div class="console-actions">
+                                    <button class="btn btn-icon btn-sm" id="btn-clear-console"
+                                        title="Xóa toàn bộ logs"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                            </div>
+                            <div class="console-output" id="console-logs">
+                                <div class="console-line info">[System] Sẵn sàng ghi nhận vết các cuộc gọi JSON-RPC
+                                    2.0...</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
         </main>
     </div>
 
@@ -238,7 +441,7 @@
     <div class="modal-backdrop" id="tx-modal">
         <div class="modal glass-panel">
             <div class="modal-header">
-                <h3>Thêm Giao Dịch Mới</h3>
+                <h3><i class="fa-solid fa-plus-circle text-blue"></i> Thêm Giao Dịch Mới</h3>
                 <button class="modal-close" id="close-tx-modal">&times;</button>
             </div>
             <form id="tx-form">
@@ -247,36 +450,55 @@
                     <div class="radio-group">
                         <label class="radio-label">
                             <input type="radio" name="transaction_type" value="chi" checked>
-                            <span class="radio-custom text-red"><i class="fa-solid fa-arrow-trend-down"></i> Chi tiêu</span>
+                            <span class="radio-custom text-red"><i class="fa-solid fa-arrow-trend-down"></i> Chi tiêu
+                                (-)</span>
                         </label>
                         <label class="radio-label">
                             <input type="radio" name="transaction_type" value="thu">
-                            <span class="radio-custom text-green"><i class="fa-solid fa-arrow-trend-up"></i> Thu nhập</span>
+                            <span class="radio-custom text-green"><i class="fa-solid fa-arrow-trend-up"></i> Thu nhập
+                                (+)</span>
                         </label>
                     </div>
                 </div>
+
                 <div class="form-group">
-                    <label for="tx-amount">Số tiền (động)</label>
-                    <input type="number" id="tx-amount" placeholder="Ví dụ: 50000" min="1" required>
+                    <div class="label-row">
+                        <label for="tx-amount">Số tiền (VNĐ)</label>
+                        <span class="amount-preview-badge" id="tx-amount-preview">0 VNĐ</span>
+                    </div>
+                    <input type="number" id="tx-amount" placeholder="Ví dụ: 50000" min="1" step="1000" required>
+
+                    <!-- Preset Amount Buttons -->
+                    <div class="amount-presets">
+                        <button type="button" class="preset-btn" data-add="50000">+50k</button>
+                        <button type="button" class="preset-btn" data-add="100000">+100k</button>
+                        <button type="button" class="preset-btn" data-add="500000">+500k</button>
+                        <button type="button" class="preset-btn" data-add="1000000">+1Tr</button>
+                        <button type="button" class="preset-btn" data-add="5000000">+5Tr</button>
+                    </div>
                 </div>
+
                 <div class="form-group">
                     <label for="tx-category">Hạng mục</label>
                     <select id="tx-category" required>
-                        <option value="Ăn uống">Ăn uống</option>
-                        <option value="Di chuyển">Di chuyển</option>
-                        <option value="Học tập">Học tập</option>
-                        <option value="Mua sắm">Mua sắm</option>
-                        <option value="Lương">Lương</option>
-                        <option value="Khác">Khác</option>
+                        <option value="Ăn uống">🍲 Ăn uống</option>
+                        <option value="Di chuyển">🚗 Di chuyển</option>
+                        <option value="Học tập">📚 Học tập</option>
+                        <option value="Mua sắm">🛍️ Mua sắm</option>
+                        <option value="Lương">💵 Lương</option>
+                        <option value="Khác">✨ Khác</option>
                     </select>
                 </div>
+
                 <div class="form-group">
                     <label for="tx-desc">Ghi chú / Mô tả</label>
-                    <input type="text" id="tx-desc" placeholder="Ví dụ: Ăn bún riêu cua">
+                    <input type="text" id="tx-desc" placeholder="Ví dụ: Ăn phở bò sáng">
                 </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="cancel-tx-modal">Hủy</button>
-                    <button type="submit" class="btn btn-primary">Lưu giao dịch</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Lưu giao
+                        dịch</button>
                 </div>
             </form>
         </div>
@@ -286,7 +508,7 @@
     <div class="modal-backdrop" id="budget-modal">
         <div class="modal glass-panel">
             <div class="modal-header">
-                <h3>Thiết Lập Hạn Mức Chi Tiêu</h3>
+                <h3><i class="fa-solid fa-piggy-bank text-amber"></i> Thiết Lập Hạn Mức Ngân Sách</h3>
                 <button class="modal-close" id="close-budget-modal-btn">&times;</button>
             </div>
             <form id="budget-form">
@@ -300,21 +522,80 @@
                         <option value="Khác">Khác</option>
                     </select>
                 </div>
+
                 <div class="form-group">
-                    <label for="budget-amount">Hạn mức tối đa tháng (động)</label>
-                    <input type="number" id="budget-amount" placeholder="Ví dụ: 3000000" min="1" required>
+                    <div class="label-row">
+                        <label for="budget-amount">Hạn mức chi tối đa tháng (VNĐ)</label>
+                        <span class="amount-preview-badge" id="budget-amount-preview">0 VNĐ</span>
+                    </div>
+                    <input type="number" id="budget-amount" placeholder="Ví dụ: 3000000" min="1" step="10000" required>
+
+                    <div class="amount-presets">
+                        <button type="button" class="preset-btn" data-add-budget="1000000">+1Tr</button>
+                        <button type="button" class="preset-btn" data-add-budget="2000000">+2Tr</button>
+                        <button type="button" class="preset-btn" data-add-budget="5000000">+5Tr</button>
+                        <button type="button" class="preset-btn" data-add-budget="10000000">+10Tr</button>
+                    </div>
                 </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="cancel-budget-modal">Hủy</button>
-                    <button type="submit" class="btn btn-primary">Đặt hạn mức</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Lưu hạn mức</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Custom Notification Toast -->
+    <!-- Modal 3: Add Keyword -->
+    <div class="modal-backdrop" id="keyword-modal">
+        <div class="modal glass-panel">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-key text-blue"></i> Thêm Từ Khóa Phân Loại</h3>
+                <button class="modal-close" id="close-keyword-modal">&times;</button>
+            </div>
+            <form id="keyword-form">
+                <div class="form-group">
+                    <label for="kw-text">Từ khóa (Ví dụ: "bún riêu", "tiền nhà", "grab")</label>
+                    <input type="text" id="kw-text" placeholder="Nhập từ khóa..." required>
+                </div>
+                <div class="form-group">
+                    <label for="kw-category">Danh mục ánh xạ</label>
+                    <select id="kw-category" required>
+                        <option value="Ăn uống">Ăn uống</option>
+                        <option value="Di chuyển">Di chuyển</option>
+                        <option value="Học tập">Học tập</option>
+                        <option value="Mua sắm">Mua sắm</option>
+                        <option value="Lương">Lương</option>
+                        <option value="Khác">Khác</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Loại giao dịch</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="kw_type" value="chi" checked>
+                            <span class="radio-custom text-red"><i class="fa-solid fa-arrow-trend-down"></i> Chi
+                                tiêu</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="kw_type" value="thu">
+                            <span class="radio-custom text-green"><i class="fa-solid fa-arrow-trend-up"></i> Thu
+                                nhập</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="cancel-keyword-modal">Hủy</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Thêm từ khóa</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2.1"></script>
 </body>
+
 </html>

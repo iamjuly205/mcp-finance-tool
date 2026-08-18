@@ -10,7 +10,6 @@ load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Khởi tạo genai nếu có API Key hợp lệ
 genai_available = False
 if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY":
     try:
@@ -21,85 +20,109 @@ if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY":
     except Exception as e:
         logging.error(f"Lỗi cấu hình Gemini API: {e}")
 else:
-    logging.warning("GEMINI_API_KEY không được tìm thấy hoặc chưa thay đổi giá trị mặc định. Sử dụng bộ phân tích cục bộ Regex làm dự phòng.")
+    logging.warning("GEMINI_API_KEY không được tìm thấy. Gemini parser sẽ bị vô hiệu hóa.")
 
-def parse_with_gemini(message: str):
+def parse_intent_with_gemini(message: str):
     """
-    Sử dụng Gemini API để phân tích câu lệnh tự nhiên của người dùng (kể cả câu không dấu).
-    Trả về dict chứa thông tin giao dịch trích xuất được hoặc None nếu phân tích thất bại/không có API key.
+    Sử dụng Gemini API để phân tích câu nói từ giọng nói (STT), phân loại ý định
+    thành 1 trong 7 công cụ MCP và bóc tách các đối số tương ứng.
     """
     if not genai_available:
         return None
         
-    # Danh sách danh mục chuẩn khớp với database
     categories_list = ["Ăn uống", "Di chuyển", "Học tập", "Mua sắm", "Lương", "Khác"]
     
     prompt = f"""
-Bạn là robot trợ lý tài chính thông minh Xiaozhi. Nhiệm vụ của bạn là phân tích câu lệnh ghi chép tài chính của người dùng và trích xuất thành đối tượng JSON chuẩn.
+Bạn là robot trợ lý tài chính thông minh Xiaozhi. Nhiệm vụ của bạn là nhận dạng và phân tích câu nói của người dùng (từ giọng nói đã được chuyển thành văn bản STT) và dịch thành lệnh gọi công cụ MCP tương ứng dưới định dạng JSON.
 
-### QUY TẮC PHÂN TÍCH QUAN TRỌNG:
-
-1. **Xử lý tiếng Việt KHÔNG DẤU**:
-   Hệ thống yêu cầu bạn xử lý hoàn hảo cả câu nói có dấu hoặc KHÔNG DẤU tiếng Việt (ví dụ: "an com 50k", "nhan luong 12tr", "di xe grab 30k"). Hãy khôi phục đúng dấu tiếng Việt cho trường "description".
-
-2. **Xử lý câu lệnh KHÔNG RÕ THÔNG TIN / CHUNG CHUNG**:
-   - Nếu câu lệnh chỉ có hành động chi và số tiền (ví dụ: "tieu 50k", "chi 100.000", "mat 200k", "-150k") -> Phân loại vào danh mục "Khác", đặt `transaction_type` = "chi" và `description` = "Chi tiêu chung".
-   - Nếu câu lệnh chỉ có hành động thu và số tiền (ví dụ: "nhan 5tr", "co them 1tr", "duoc cho 200k", "+500k") -> Phân loại vào danh mục "Khác", đặt `transaction_type` = "thu" và `description` = "Thu nhập chung".
-   - Nếu có mô tả hành động cụ thể nhưng không khớp danh mục chuẩn nào (ví dụ: "dong tien nha 3tr", "tra no 1tr", "cho vay 500k") -> Phân loại vào danh mục "Khác", giữ nguyên mô tả.
-
-3. **Phân loại Danh mục (Bắt buộc trường "category" phải trả về chính xác 1 trong 6 chuỗi có dấu dưới đây)**:
-   - "Ăn uống": Đồ ăn, thức uống, ăn sáng, cơm trưa, đi nhậu, trà sữa, cafe, mua bún phở, bánh mì... (Từ khóa không dấu: "an uong", "an sang", "com trua", "di nhau", "tra sua", "cafe", "pho", "banh mi", "com")
-   - "Di chuyển": Grab, taxi, đổ xăng, sửa xe, xe bus, vé máy bay, vé tàu, đi lại... (Từ khóa không dấu: "di chuyen", "grab", "taxi", "do xang", "sua xe", "xe bus", "ve may bay", "ve tau", "di lai")
-   - "Học tập": Mua sách vở, học phí, đóng học, mua khóa học, dụng cụ học tập... (Từ khóa không dấu: "hoc tap", "mua sach", "hoc phi", "dong hoc", "khoa hoc")
-   - "Mua sắm": Quần áo, giày dép, mua đồ Shopee/Lazada/Tiki, mua sắm siêu thị, đồ gia dụng, mỹ phẩm... (Từ khóa không dấu: "mua sam", "quan ao", "giay dep", "shopee", "lazada", "tiki", "sieu thi", "do gia dung")
-   - "Lương": Lương tháng, nhận lương, thưởng dự án, tiền công làm thêm... (Từ khóa không dấu: "luong", "nhan luong", "thuong", "tien cong")
-   - "Khác": Tiền nhà, tiền điện nước, trả nợ, cho vay, từ thiện, rút tiền, gửi tiền, các giao dịch không rõ danh mục hoặc không khớp 5 danh mục trên.
-
-4. **Số tiền (amount)**:
-   Quy đổi tất cả các cách viết tắt về số thực tế:
-   - "k", "nghìn", "ng", "ngan": nhân 1.000 (ví dụ: "50k" -> 50000, "20k000" -> 20000)
-   - "tr", "triệu", "trieu": nhân 1.000.000 (ví dụ: "15tr" -> 15000000, "1tr5" hoặc "1.5tr" -> 15000000)
-   - "chục": nhân 10.000 (ví dụ: "3 chục" -> 30000)
-
-5. **Đánh giá tính hợp lệ (is_transaction)**:
-   Chỉ chọn `true` nếu câu lệnh chứa số tiền hợp lệ và mô tả hành động ghi nhận tài chính. Nếu là câu chào hỏi, hỏi thông tin chung (ví dụ: "hello", "báo cáo tháng này", "xem hạn mức") -> Thiết lập `is_transaction` = false.
+### ĐẶC THÙ ĐẦU VÀO GIỌNG NÓI (STT):
+1. Có thể chứa từ đệm vô nghĩa hoặc từ gọi robot (ví dụ: "robot ơi", "xiaozhi ơi", "nha", "nhé", "giùm tôi", "à", "ừm"). Hãy lọc bỏ chúng khỏi tham số `description`.
+2. Có thể bị mất dấu tiếng Việt hoặc sai dấu nhẹ (ví dụ: "an trua het 55k", "chuc cu ruoi"). Hãy phục hồi đúng tiếng Việt có dấu.
+3. Số tiền có thể được nói bằng chữ hoàn toàn (ví dụ: "hai triệu rưỡi" -> 2500000, "năm mươi lăm nghìn" -> 55000, "trăm rưỡi" -> 150000, "một củ" -> 1000000, "ba lít" -> 300000). Hãy quy đổi chính xác thành số thực tế.
 
 ---
 
-### CÁC VÍ DỤ MINH HỌA (FEW-SHOT EXAMPLES):
+### DANH SÁCH 7 CÔNG CỤ (MCP TOOLS) VÀ THAM SỐ:
 
-- **Input**: "an trua het 55k"
-  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 55000, "category": "Ăn uống", "description": "Ăn trưa"}}
+1. **`thong_ke_thu_chi`**: Khi người dùng muốn xem báo cáo, thống kê, tổng quan tình hình tài chính thu nhập/chi tiêu.
+   - Arguments: `{{}}` (không có tham số).
 
-- **Input**: "tieu het 150k"
-  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 150000, "category": "Khác", "description": "Chi tiêu chung"}}
+2. **`huy_giao_dich_gan_nhat`**: Khi người dùng muốn hủy, xóa, hoặc hoàn tác giao dịch vừa nhập sai.
+   - Arguments: `{{}}` (không có tham số).
 
-- **Input**: "nhan luong 15tr"
-  **Output**: {{"is_transaction": true, "transaction_type": "thu", "amount": 15000000, "category": "Lương", "description": "Nhận lương"}}
+3. **`xem_ngan_sach`**: Khi người dùng muốn xem báo cáo ngân sách, hạn mức chi tiêu còn lại của các danh mục.
+   - Arguments: `{{}}` (không có tham số).
 
-- **Input**: "co them 1.2tr"
-  **Output**: {{"is_transaction": true, "transaction_type": "thu", "amount": 12000000, "category": "Khác", "description": "Thu nhập chung"}}
+4. **`thiet_lap_han_muc`**: Khi người dùng muốn cài đặt/cập nhật hạn mức chi tiêu hàng tháng cho một danh mục.
+   - Arguments:
+     * `category` (Bắt buộc): Một trong các danh mục chuẩn: {categories_list}.
+     * `amount` (Bắt buộc): Số tiền hạn mức (số dương).
 
-- **Input**: "di grab di lam het 30k"
-  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 30000, "category": "Di chuyển", "description": "Đi Grab đi làm"}}
+5. **`sua_giao_dich`**: Khi người dùng muốn sửa đổi thông tin của một giao dịch đã lưu.
+   - Arguments:
+     * `transaction_id` (Bắt buộc): ID giao dịch cần sửa. Nếu người dùng nói sửa giao dịch "vừa rồi", "gần nhất", "vừa nhập" -> điền `-1`.
+     * `transaction_type` (Tùy chọn): "thu" hoặc "chi".
+     * `amount` (Tùy chọn): Số tiền mới.
+     * `category` (Tùy chọn): Danh mục mới trong {categories_list}.
+     * `description` (Tùy chọn): Ghi chú mới.
 
-- **Input**: "dong tien nuoc 350k"
-  **Output**: {{"is_transaction": true, "transaction_type": "chi", "amount": 350000, "category": "Khác", "description": "Đóng tiền nước"}}
+6. **`truy_van_giao_dich`**: Khi người dùng muốn liệt kê, xem danh sách giao dịch cụ thể theo bộ lọc.
+   - Arguments:
+     * `transaction_type` (Tùy chọn): "thu" hoặc "chi".
+     * `category` (Tùy chọn): Danh mục để lọc.
+     * `time_range` (Bắt buộc): Khoảng thời gian: "today" (hôm nay), "yesterday" (hôm qua), "this_week" (tuần này), "this_month" (tháng này), hoặc "all" (tất cả). Mặc định là "today".
+     * `limit` (Tùy chọn): Số lượng tối đa (mặc định là 10).
 
-- **Input**: "chào robot"
-  **Output**: {{"is_transaction": false, "transaction_type": "chi", "amount": 0, "category": "Khác", "description": ""}}
+7. **`ghi_nhan_thu_chi`**: Khi người dùng ghi chép một giao dịch thu hoặc chi tiêu thông thường.
+   - Arguments:
+     * `transaction_type` (Bắt buộc): "thu" (nhận, kiếm được, lương...) hoặc "chi" (tiêu, trả tiền, mất tiền...).
+     * `amount` (Bắt buộc): Số tiền thực tế (số dương).
+     * `category` (Bắt buộc): Chọn 1 trong các danh mục chuẩn: {categories_list}. Quy tắc:
+       - "Ăn uống": đồ ăn, thức uống, cafe, đi nhậu, phở...
+       - "Di chuyển": grab, xăng xe, taxi, máy bay...
+       - "Học tập": mua sách, học phí, khóa học...
+       - "Mua sắm": mua quần áo, giày dép, Shopee, siêu thị...
+       - "Lương": tiền lương, tiền thưởng, tiền công...
+       - "Khác": tiền nhà, tiền nước, cho vay, trả nợ hoặc các khoản chung chung.
+     * `description` (Bắt buộc): Mô tả ngắn gọn đã làm sạch từ đệm và viết hoa chữ cái đầu (ví dụ: "Ăn trưa", "Mua quần áo shopee").
 
 ---
 
-Hãy phân tích câu lệnh sau và trả về một chuỗi JSON duy nhất, không có văn bản bao ngoài, không dùng block markdown ```json:
+### VÍ DỤ PHẢN HỒI (FEW-SHOT EXAMPLES):
+
+- **Input**: "Thống kê cho tôi xem tháng này thế nào rồi robot"
+  **Output**: {{"tool": "thong_ke_thu_chi", "arguments": {{}}}}
+
+- **Input**: "Robot ơi hoàn tác khoản vừa nhập giùm nhé"
+  **Output**: {{"tool": "huy_giao_dich_gan_nhat", "arguments": {{}}}}
+
+- **Input**: "Xem ngân sách của tôi còn lại bao nhiêu vậy robot"
+  **Output**: {{"tool": "xem_ngan_sach", "arguments": {{}}}}
+
+- **Input**: "Đặt hạn mức chi tiêu ăn uống là ba triệu đồng nhé"
+  **Output**: {{"tool": "thiet_lap_han_muc", "arguments": {{"category": "Ăn uống", "amount": 3000000}}}}
+
+- **Input**: "Robot ơi sửa giao dịch vừa rồi thành tiền ăn trưa hết 50k nha"
+  **Output**: {{"tool": "sua_giao_dich", "arguments": {{"transaction_id": -1, "amount": 50000, "category": "Ăn uống", "description": "Ăn trưa"}}}}
+
+- **Input**: "Liệt kê các khoản chi tiêu hôm qua"
+  **Output**: {{"tool": "truy_van_giao_dich", "arguments": {{"transaction_type": "chi", "time_range": "yesterday", "limit": 10}}}}
+
+- **Input**: "an trua het nam muoi lam ngan"
+  **Output**: {{"tool": "ghi_nhan_thu_chi", "arguments": {{"transaction_type": "chi", "amount": 55000, "category": "Ăn uống", "description": "Ăn trưa"}}}}
+
+- **Input**: "Được chị gái cho hai triệu rưỡi nè robot"
+  **Output**: {{"tool": "ghi_nhan_thu_chi", "arguments": {{"transaction_type": "thu", "amount": 2500000, "category": "Khác", "description": "Chị gái cho"}}}}
+
+---
+
+Hãy phân tích câu lệnh sau và trả về một chuỗi JSON duy nhất đại diện cho tool gọi, không có văn bản bao ngoài, không dùng block markdown ```json:
 "{message}"
 """
     try:
         import google.generativeai as genai
-        # Sử dụng model gemini-2.5-flash để phản hồi nhanh
         model = genai.GenerativeModel("gemini-2.5-flash")
         
-        # Enforce JSON output format
         response = model.generate_content(
             prompt,
             generation_config={"response_mime_type": "application/json"}
@@ -108,19 +131,26 @@ Hãy phân tích câu lệnh sau và trả về một chuỗi JSON duy nhất, k
         result_text = response.text.strip()
         data = json.loads(result_text)
         
-        if data.get("is_transaction") and data.get("amount", 0) > 0:
-            category = data.get("category", "Khác")
-            # Bảo đảm danh mục nằm trong danh sách hợp lệ
-            if category not in categories_list:
-                category = "Khác"
-                
-            return {
-                "transaction_type": data.get("transaction_type", "chi"),
-                "amount": float(data.get("amount", 0)),
-                "category": category,
-                "description": data.get("description", message)
-            }
-        return None
+        tool_name = data.get("tool")
+        args = data.get("arguments", {})
+        
+        # Bảo đảm category nếu có trong args phải hợp lệ
+        if "category" in args and args["category"] not in categories_list:
+            args["category"] = "Khác"
+            
+        return {
+            "tool": tool_name,
+            "arguments": args
+        }
     except Exception as e:
-        logging.error(f"Lỗi gọi Gemini API để phân tích cú pháp: {e}")
+        logging.error(f"Lỗi gọi Gemini API để định tuyến ý định: {e}")
         return None
+
+def parse_with_gemini(message: str):
+    """
+    Hàm tương thích ngược. Trích xuất giao dịch từ Gemini.
+    """
+    parsed = parse_intent_with_gemini(message)
+    if parsed and parsed["tool"] == "ghi_nhan_thu_chi":
+        return parsed["arguments"]
+    return None

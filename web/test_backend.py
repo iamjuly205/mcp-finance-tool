@@ -83,3 +83,27 @@ def test_api_chat_simulation():
     data = resp.json()
     assert "Mua sắm" in data["tts"] or "Khác" in data["tts"] or "120.000" in data["tts"]
     assert data["rpc_call"]["method"] == "tools/call"
+
+def test_api_delete_single_transaction_and_budget():
+    # Thêm giao dịch
+    resp_tx = client.post("/api/transactions", json={
+        "transaction_type": "chi",
+        "amount": 50000.0,
+        "category": "Ăn uống",
+        "description": "Cơm sườn"
+    })
+    tx_id = resp_tx.json()["id"]
+
+    # Xóa giao dịch theo ID
+    resp_del_tx = client.delete(f"/api/transactions/{tx_id}")
+    assert resp_del_tx.status_code == 200
+    assert resp_del_tx.json()["success"] is True
+
+    # Thêm ngân sách
+    client.post("/api/budgets", json={"category": "Di chuyển", "amount": 500000.0})
+    
+    # Xóa ngân sách
+    resp_del_b = client.delete("/api/budgets/Di%20chuy%E1%BB%83n")
+    assert resp_del_b.status_code == 200
+    assert resp_del_b.json()["success"] is True
+

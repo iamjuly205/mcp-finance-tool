@@ -34,8 +34,105 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Tự động gộp & dọn dẹp các bản ghi ngân sách trùng lặp hoa/thường
+        cursor.execute("SELECT category, amount FROM ngan_sach")
+        rows = cursor.fetchall()
+        if rows:
+            merged = {}
+            for c, a in rows:
+                norm_c = normalize_category_name(c)
+                merged[norm_c] = a
+            cursor.execute("DELETE FROM ngan_sach")
+            for norm_c, a in merged.items():
+                cursor.execute("INSERT INTO ngan_sach (category, amount) VALUES (?, ?)", (norm_c, a))
+            conn.commit()
+
+        
+        # Tạo bảng keyword phân loại giao dịch
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS keywords_mapping (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT UNIQUE NOT NULL,
+                category TEXT NOT NULL,
+                type TEXT NOT NULL
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_keywords_mapping_keyword ON keywords_mapping(keyword)")
+        
+        # Seed default keywords if empty
+        cursor.execute("SELECT COUNT(*) FROM keywords_mapping")
+        if cursor.fetchone()[0] == 0:
+            default_keywords = [
+                # --- ĂN UỐNG (chi) ---
+                ("ăn", "Ăn uống", "chi"), ("uống", "Ăn uống", "chi"), ("ăn uống", "Ăn uống", "chi"),
+                ("ăn trưa", "Ăn uống", "chi"), ("ăn sáng", "Ăn uống", "chi"), ("ăn tối", "Ăn uống", "chi"),
+                ("ăn vặt", "Ăn uống", "chi"), ("đi ăn", "Ăn uống", "chi"), ("cơm", "Ăn uống", "chi"),
+                ("bún", "Ăn uống", "chi"), ("phở", "Ăn uống", "chi"), ("mì", "Ăn uống", "chi"),
+                ("hủ tiếu", "Ăn uống", "chi"), ("cháo", "Ăn uống", "chi"), ("bánh", "Ăn uống", "chi"),
+                ("lẩu", "Ăn uống", "chi"), ("nướng", "Ăn uống", "chi"), ("nhậu", "Ăn uống", "chi"),
+                ("đi nhậu", "Ăn uống", "chi"), ("bia", "Ăn uống", "chi"), ("rượu", "Ăn uống", "chi"),
+                ("nước ngọt", "Ăn uống", "chi"), ("nước lọc", "Ăn uống", "chi"), ("cafe", "Ăn uống", "chi"),
+                ("cà phê", "Ăn uống", "chi"), ("trà sữa", "Ăn uống", "chi"), ("sinh tố", "Ăn uống", "chi"),
+                ("nước ép", "Ăn uống", "chi"), ("kem", "Ăn uống", "chi"), ("hoa quả", "Ăn uống", "chi"),
+                ("trái cây", "Ăn uống", "chi"), ("quán", "Ăn uống", "chi"), ("nhà hàng", "Ăn uống", "chi"),
+                ("cơm tấm", "Ăn uống", "chi"), ("bún bò", "Ăn uống", "chi"), ("bún riêu", "Ăn uống", "chi"),
+                ("bánh mì", "Ăn uống", "chi"), ("pizza", "Ăn uống", "chi"), ("kfc", "Ăn uống", "chi"),
+                ("lotteria", "Ăn uống", "chi"), ("jollibee", "Ăn uống", "chi"), ("mcdonald", "Ăn uống", "chi"),
+                ("bánh tráng", "Ăn uống", "chi"), ("ốc", "Ăn uống", "chi"), ("xôi", "Ăn uống", "chi"),
+                ("chè", "Ăn uống", "chi"), ("sữa", "Ăn uống", "chi"), ("ăn tiệc", "Ăn uống", "chi"),
+                ("liên hoan", "Ăn uống", "chi"),
+                
+                # --- DI CHUYỂN (chi) ---
+                ("xe", "Di chuyển", "chi"), ("xăng", "Di chuyển", "chi"), ("đổ xăng", "Di chuyển", "chi"),
+                ("grab", "Di chuyển", "chi"), ("be", "Di chuyển", "chi"), ("gojek", "Di chuyển", "chi"),
+                ("xanh sm", "Di chuyển", "chi"), ("taxi", "Di chuyển", "chi"), ("bus", "Di chuyển", "chi"),
+                ("xe bus", "Di chuyển", "chi"), ("xe buýt", "Di chuyển", "chi"), ("tàu", "Di chuyển", "chi"),
+                ("vé tàu", "Di chuyển", "chi"), ("máy bay", "Di chuyển", "chi"), ("vé máy bay", "Di chuyển", "chi"),
+                ("đi lại", "Di chuyển", "chi"), ("di chuyển", "Di chuyển", "chi"), ("gửi xe", "Di chuyển", "chi"),
+                ("vé xe", "Di chuyển", "chi"), ("xe khách", "Di chuyển", "chi"), ("xe đò", "Di chuyển", "chi"),
+                ("limousine", "Di chuyển", "chi"), ("thuê xe", "Di chuyển", "chi"), ("sửa xe", "Di chuyển", "chi"),
+                ("bảo dưỡng xe", "Di chuyển", "chi"), ("rửa xe", "Di chuyển", "chi"), ("thay nhớt", "Di chuyển", "chi"),
+                ("metro", "Di chuyển", "chi"),
+                
+                # --- MUA SẮM (chi) ---
+                ("mua", "Mua sắm", "chi"), ("sắm", "Mua sắm", "chi"), ("mua sắm", "Mua sắm", "chi"),
+                ("shopee", "Mua sắm", "chi"), ("lazada", "Mua sắm", "chi"), ("tiki", "Mua sắm", "chi"),
+                ("tiktok shop", "Mua sắm", "chi"), ("chợ", "Mua sắm", "chi"), ("siêu thị", "Mua sắm", "chi"),
+                ("quần", "Mua sắm", "chi"), ("áo", "Mua sắm", "chi"), ("quần áo", "Mua sắm", "chi"),
+                ("giày", "Mua sắm", "chi"), ("dép", "Mua sắm", "chi"), ("giày dép", "Mua sắm", "chi"),
+                ("mũ", "Mua sắm", "chi"), ("nón", "Mua sắm", "chi"), ("kính", "Mua sắm", "chi"),
+                ("váy", "Mua sắm", "chi"), ("đầm", "Mua sắm", "chi"), ("túi xách", "Mua sắm", "chi"),
+                ("ví", "Mua sắm", "chi"), ("điện thoại", "Mua sắm", "chi"), ("laptop", "Mua sắm", "chi"),
+                ("tai nghe", "Mua sắm", "chi"), ("phụ kiện", "Mua sắm", "chi"), ("ốp lưng", "Mua sắm", "chi"),
+                ("sạc", "Mua sắm", "chi"), ("máy tính", "Mua sắm", "chi"), ("đồng hồ", "Mua sắm", "chi"),
+                ("mỹ phẩm", "Mua sắm", "chi"), ("son", "Mua sắm", "chi"), ("dầu gội", "Mua sắm", "chi"),
+                ("sữa tắm", "Mua sắm", "chi"), ("bột giặt", "Mua sắm", "chi"), ("đồ gia dụng", "Mua sắm", "chi"),
+                ("decor", "Mua sắm", "chi"), ("trang trí", "Mua sắm", "chi"), ("nội thất", "Mua sắm", "chi"),
+                ("đồ chơi", "Mua sắm", "chi"), ("quà tặng", "Mua sắm", "chi"), ("quà sinh nhật", "Mua sắm", "chi"),
+                
+                # --- HỌC TẬP (chi) ---
+                ("học", "Học tập", "chi"), ("học tập", "Học tập", "chi"), ("sách", "Học tập", "chi"),
+                ("vở", "Học tập", "chi"), ("sách vở", "Học tập", "chi"), ("bút", "Học tập", "chi"),
+                ("cặp", "Học tập", "chi"), ("balo", "Học tập", "chi"), ("học phí", "Học tập", "chi"),
+                ("đóng học", "Học tập", "chi"), ("tiền học", "Học tập", "chi"), ("khóa học", "Học tập", "chi"),
+                ("khoá học", "Học tập", "chi"), ("học thêm", "Học tập", "chi"), ("học tiếng anh", "Học tập", "chi"),
+                ("tài liệu", "Học tập", "chi"), ("văn phòng phẩm", "Học tập", "chi"),
+                
+                # --- LƯƠNG (thu) ---
+                ("lương", "Lương", "thu"), ("nhận lương", "Lương", "thu"), ("thưởng", "Lương", "thu"),
+                ("tiền công", "Lương", "thu"), ("thu nhập", "Lương", "thu"), ("lương tháng", "Lương", "thu"),
+                ("làm thêm", "Lương", "thu"), ("parttime", "Lương", "thu"), ("freelance", "Lương", "thu"),
+                ("hoa hồng", "Lương", "thu"), ("tiền túi", "Lương", "thu"), ("được cho", "Lương", "thu"),
+                ("cho tiền", "Lương", "thu"), ("ba mẹ cho", "Lương", "thu"), ("bố mẹ cho", "Lương", "thu"),
+                ("tiền tiêu vặt", "Lương", "thu"), ("bán đồ", "Lương", "thu"), ("thanh lý", "Lương", "thu"),
+                ("thu nợ", "Lương", "thu"), ("đòi nợ", "Lương", "thu"), ("tiền lãi", "Lương", "thu"),
+                ("cổ tức", "Lương", "thu"), ("hoàn tiền", "Lương", "thu"), ("trúng thưởng", "Lương", "thu")
+            ]
+            cursor.executemany("INSERT INTO keywords_mapping (keyword, category, type) VALUES (?, ?, ?)", default_keywords)
+            
         conn.commit()
-        logging.info("Bảng thu_chi_logs và ngan_sach đã sẵn sàng hoạt động.") 
+        logging.info("Bảng thu_chi_logs, ngan_sach và keywords_mapping đã sẵn sàng hoạt động.") 
     except Exception as e:
         logging.error(f"Lỗi khi khởi tạo database: {e}")
     finally:
@@ -233,17 +330,137 @@ def delete_last_transaction() -> bool:
     finally:
         conn.close()
 
-def set_ngan_sach(category: str, amount: float) -> None:
-    """Thiết lập hoặc cập nhật hạn mức chi tiêu hàng tháng cho một danh mục"""
+def delete_giao_dich_by_id(tx_id: int) -> bool:
+    """Xóa giao dịch theo ID cụ thể"""
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute("DELETE FROM thu_chi_logs WHERE id=?", (tx_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"Lỗi khi xóa giao dịch ID #{tx_id}: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def delete_all_transactions() -> bool:
+    """Xóa toàn bộ giao dịch trong bảng thu_chi_logs"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM thu_chi_logs")
+        conn.commit()
+        logging.info("Đã xóa toàn bộ lịch sử giao dịch thành công.")
+        return True
+    except Exception as e:
+        logging.error(f"Lỗi khi xóa toàn bộ giao dịch: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def delete_giao_dich_by_matching(
+    transaction_type: Optional[str] = None,
+    amount: Optional[float] = None,
+    category: Optional[str] = None
+) -> List[int]:
+    """Tìm và xóa các giao dịch khớp với tiêu chí, trả về danh sách ID đã xóa"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = "SELECT id FROM thu_chi_logs WHERE 1=1"
+        params = []
+        if transaction_type:
+            query += " AND type = ?"
+            params.append(transaction_type)
+        if amount:
+            query += " AND amount = ?"
+            params.append(amount)
+        if category:
+            query += " AND category LIKE ?"
+            params.append(f"%{category}%")
+            
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        if not rows:
+            return []
+            
+        ids = [row[0] for row in rows]
+        # Xóa các id này
+        placeholders = ",".join(["?"] * len(ids))
+        cursor.execute(f"DELETE FROM thu_chi_logs WHERE id IN ({placeholders})", ids)
+        conn.commit()
+        logging.info(f"Đã xóa các giao dịch khớp tiêu chí có ID: {ids}")
+        return ids
+    except Exception as e:
+        logging.error(f"Lỗi khi xóa giao dịch theo bộ lọc: {e}")
+        raise e
+    finally:
+        conn.close()
+
+STANDARD_CATEGORIES_MAP = {
+    "an uong": "Ăn uống",
+    "ăn uống": "Ăn uống",
+    "di chuyen": "Di chuyển",
+    "di chuyển": "Di chuyển",
+    "hoc tap": "Học tập",
+    "học tập": "Học tập",
+    "mua sam": "Mua sắm",
+    "mua sắm": "Mua sắm",
+    "luong": "Lương",
+    "lương": "Lương",
+    "khac": "Khác",
+    "khác": "Khác"
+}
+
+def normalize_category_name(cat: str) -> str:
+    if not cat:
+        return "Khác"
+    c_strip = cat.strip()
+    c_lower = c_strip.lower()
+    if c_lower in STANDARD_CATEGORIES_MAP:
+        return STANDARD_CATEGORIES_MAP[c_lower]
+    return c_strip[0].upper() + c_strip[1:] if len(c_strip) > 0 else c_strip
+
+def delete_ngan_sach(category: str) -> bool:
+    """Xóa ngân sách hạn mức của một danh mục (không phân biệt hoa thường)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        norm_cat = normalize_category_name(category)
+        cursor.execute("DELETE FROM ngan_sach WHERE LOWER(category) = LOWER(?) OR LOWER(category) = LOWER(?)", (category.strip(), norm_cat))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"Lỗi khi xóa ngân sách {category}: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def set_ngan_sach(category: str, amount: float) -> None:
+    """Thiết lập hoặc cập nhật hạn mức chi tiêu hàng tháng cho một danh mục (Cập nhật đúng bản ghi cũ nếu đã có)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        norm_cat = normalize_category_name(category)
+        
+        # Tìm danh mục khớp nhất trong DB hiện tại
+        cursor.execute("SELECT category FROM ngan_sach")
+        rows = cursor.fetchall()
+        target_cat = norm_cat
+        for (existing_cat,) in rows:
+            if existing_cat.lower().strip() == category.lower().strip() or is_category_match(existing_cat, norm_cat):
+                target_cat = existing_cat
+                break
+
+        # Xóa các bản ghi trùng lặp không phân biệt hoa thường trước khi insert
+        cursor.execute("DELETE FROM ngan_sach WHERE LOWER(category) = LOWER(?) OR LOWER(category) = LOWER(?)", (category.strip(), target_cat.strip()))
         cursor.execute(
-            "INSERT OR REPLACE INTO ngan_sach (category, amount) VALUES (?, ?)",
-            (category, amount)
+            "INSERT INTO ngan_sach (category, amount) VALUES (?, ?)",
+            (target_cat, amount)
         )
         conn.commit()
-        logging.info(f"Đã thiết lập hạn mức {amount}đ cho danh mục {category}.")
+        logging.info(f"Đã thiết lập hạn mức {amount}đ cho danh mục {target_cat}.")
     except Exception as e:
         logging.error(f"Lỗi khi thiết lập ngân sách: {e}")
         raise e
@@ -255,7 +472,8 @@ def get_ngan_sach(category: str) -> Optional[float]:
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT amount FROM ngan_sach WHERE category = ?", (category,))
+        norm_cat = normalize_category_name(category)
+        cursor.execute("SELECT amount FROM ngan_sach WHERE LOWER(category) = LOWER(?) OR LOWER(category) = LOWER(?)", (category.strip(), norm_cat))
         row = cursor.fetchone()
         return row[0] if row else None
     except Exception as e:
@@ -263,6 +481,7 @@ def get_ngan_sach(category: str) -> Optional[float]:
         raise e
     finally:
         conn.close()
+
 
 def get_all_ngan_sach() -> List[Dict[str, Any]]:
     """Lấy tất cả hạn mức ngân sách đã thiết lập"""
@@ -340,6 +559,68 @@ def get_monthly_spending_for_budget_category(budget_cat: str) -> float:
         return total
     except Exception as e:
         logging.error(f"Lỗi tính tổng chi tiêu tháng theo ngân sách: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def get_keyword_mappings() -> List[Dict[str, Any]]:
+    """Lấy danh sách tất cả từ khóa phân loại"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, keyword, category, type FROM keywords_mapping ORDER BY id DESC")
+        rows = cursor.fetchall()
+        return [{"id": r[0], "keyword": r[1], "category": r[2], "type": r[3]} for r in rows]
+    except Exception as e:
+        logging.error(f"Lỗi khi lấy từ khóa: {e}")
+        return []
+    finally:
+        conn.close()
+
+def add_keyword_mapping(keyword: str, category: str, transaction_type: str) -> int:
+    """Thêm hoặc cập nhật một từ khóa phân loại"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT OR REPLACE INTO keywords_mapping (keyword, category, type) VALUES (?, ?, ?)",
+            (keyword.strip().lower(), category, transaction_type)
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except Exception as e:
+        logging.error(f"Lỗi khi thêm từ khóa: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def delete_keyword_mapping(mapping_id: int) -> bool:
+    """Xóa một từ khóa phân loại theo ID"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM keywords_mapping WHERE id = ?", (mapping_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"Lỗi khi xóa từ khóa: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def update_keyword_mapping(mapping_id: int, keyword: str, category: str, transaction_type: str) -> bool:
+    """Cập nhật thông tin của một từ khóa phân loại theo ID"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE keywords_mapping SET keyword = ?, category = ?, type = ? WHERE id = ?",
+            (keyword.strip().lower(), category, transaction_type, mapping_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"Lỗi khi cập nhật từ khóa: {e}")
         raise e
     finally:
         conn.close()

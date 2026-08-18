@@ -1,6 +1,7 @@
 # web/backend.py
 import sys
 import os
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -9,11 +10,13 @@ from typing import Optional, List
 # Thêm thư mục gốc vào path để import database
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import database
-from web.gemini_parser import parse_with_gemini
+import server
+from web.gemini_parser import parse_intent_with_gemini, parse_with_gemini
+from web.keyword_parser import route_intent_with_keywords, parse_with_keywords
 
 def remove_accents(input_str: str) -> str:
     s1 = 'ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯưẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỊịỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ'
-    s0 = 'AAAAEECIIOOOOUUYaaaaeecioooouuyAaDdIiUuOoUuAaAaAaAaAaAaAaAaAaAaAaAaEeEeEeEeEeEeEeEeIiOoOoOoOoOoOoOoOoOoOoOoOoUuUuUuUuUuUuUuYyYyYyYy'
+    s0 = 'AAAAEEEIIOOOOUUYaaaaeeeiioooouuyAaDdIiUuOoUuAaAaAaAaAaAaAaAaAaAaAaAaEeEeEeEeEeEeEeEeIiOoOoOoOoOoOoOoOoOoOoOoOoUuUuUuUuUuUuUuYyYyYyYy'
     res = []
     for c in input_str:
         idx = s1.find(c)
@@ -35,6 +38,11 @@ class BudgetCreate(BaseModel):
     category: str
     amount: float
 
+class KeywordMappingCreate(BaseModel):
+    keyword: str
+    category: str
+    type: str  # "thu" or "chi"
+
 class ChatInput(BaseModel):
     message: str
 
@@ -42,6 +50,23 @@ class ChatInput(BaseModel):
 @app.on_event("startup")
 def startup_db():
     database.init_db()
+
+@app.get("/api/mcp-status")
+def get_mcp_status_api():
+    import json
+    import time
+    status_file = "mcp_status.json"
+    if not os.path.exists(status_file):
+        return {"status": "offline", "message": "Bridge chưa chạy"}
+    try:
+        with open(status_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # Check if timestamp is within last 12 seconds
+        if time.time() - data.get("timestamp", 0) > 12:
+            return {"status": "offline", "message": "Bridge mất kết nối (stale)"}
+        return {"status": data.get("status", "offline")}
+    except Exception as e:
+        return {"status": "offline", "message": str(e)}
 
 @app.get("/api/summary")
 def get_summary_api():
@@ -83,11 +108,13 @@ def create_transaction_api(tx: TransactionCreate):
             if match:
                 budget_cat, budget_amount = match
                 spent_amount = database.get_monthly_spending_for_budget_category(budget_cat)
+                spent_str = f"{int(spent_amount):,}".replace(",", ".")
+                limit_str = f"{int(budget_amount):,}".replace(",", ".")
                 if spent_amount > budget_amount:
-                    warning = f"Cảnh báo vượt hạn mức ngân sách '{budget_cat}'!"
+                    warning = f"Cảnh báo: Bạn đã chi tiêu vượt hạn mức của danh mục '{budget_cat}' ({spent_str}/{limit_str} đồng)!"
                 elif spent_amount >= budget_amount * 0.8:
                     percent = int((spent_amount / budget_amount) * 100)
-                    warning = f"Cảnh báo: Ngân sách '{budget_cat}' đạt {percent}% hạn mức."
+                    warning = f"Cảnh báo: Chi tiêu cho '{budget_cat}' đã đạt {percent}% hạn mức tháng ({spent_str}/{limit_str} đồng)!"
                     
         return {
             "success": True, 
@@ -103,6 +130,24 @@ def delete_last_transaction_api():
     try:
         success = database.delete_last_transaction()
         return {"success": success}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/transactions/{tx_id}")
+def delete_transaction_by_id_api(tx_id: int):
+    try:
+        success = database.delete_giao_dich_by_id(tx_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch.")
+        return {"success": True, "message": "Xóa giao dịch thành công."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/transactions")
+def delete_all_transactions_api():
+    try:
+        success = database.delete_all_transactions()
+        return {"success": success, "message": "Đã xóa toàn bộ lịch sử giao dịch thành công."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -137,100 +182,210 @@ def set_budget_api(budget: BudgetCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/budgets/{category}")
+def delete_budget_api(category: str):
+    try:
+        success = database.delete_ngan_sach(category)
+        if not success:
+            raise HTTPException(status_code=404, detail="Không tìm thấy hạn mức ngân sách.")
+        return {"success": True, "message": f"Đã xóa hạn mức ngân sách {category}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/keywords")
+def get_keywords_api():
+    try:
+        return database.get_keyword_mappings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/keywords")
+def add_keyword_api(mapping: KeywordMappingCreate):
+    if not mapping.keyword.strip():
+        raise HTTPException(status_code=400, detail="Từ khóa không được để trống.")
+    if mapping.type not in ["thu", "chi"]:
+        raise HTTPException(status_code=400, detail="Loại giao dịch phải là 'thu' hoặc 'chi'.")
+    try:
+        mapping_id = database.add_keyword_mapping(mapping.keyword, mapping.category, mapping.type)
+        return {"success": True, "id": mapping_id, "message": "Thêm từ khóa thành công."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/keywords/{mapping_id}")
+def delete_keyword_api(mapping_id: int):
+    try:
+        success = database.delete_keyword_mapping(mapping_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Không tìm thấy từ khóa.")
+        return {"success": True, "message": "Xóa từ khóa thành công."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/keywords/{mapping_id}")
+def update_keyword_api(mapping_id: int, mapping: KeywordMappingCreate):
+    try:
+        success = database.update_keyword_mapping(mapping_id, mapping.keyword, mapping.category, mapping.type)
+        if not success:
+            raise HTTPException(status_code=404, detail="Không tìm thấy từ khóa.")
+        return {"success": True, "message": "Cập nhật từ khóa thành công."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/chat")
 def simulate_chat_api(chat: ChatInput):
     msg = chat.message.strip()
     
     try:
-        # Thử phân tích cú pháp bằng Gemini trước
-        parsed = parse_with_gemini(msg)
+        source = None
         
+        def write_routing_log(message: str):
+            try:
+                from datetime import datetime
+                with open("server.log", "a", encoding="utf-8") as f:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+                    f.write(f"{timestamp} - INFO - {message}\n")
+            except Exception:
+                pass
+
+        # 1. Thử định tuyến bằng bộ từ khóa cục bộ trước (Keyword-First)
+        parsed = route_intent_with_keywords(msg)
         if parsed:
-            tx_type = parsed["transaction_type"]
-            amount = parsed["amount"]
-            category = parsed["category"]
-            description = parsed["description"]
-        else:
-            # Sử dụng bộ phân tích Regex làm dự phòng nếu không có API key hoặc lỗi
+            source = "keyword"
+            print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
+            print(">>> KẾT QUẢ: Khớp bộ từ khóa cục bộ (SYSTEM KEYWORDS) thành công!\n", flush=True)
+            write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: SYSTEM KEYWORD (Cục bộ)")
+            logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: SYSTEM KEYWORD (Cục bộ)")
+        
+        # 2. Nếu không khớp từ khóa, fallback sang Gemini (LLM)
+        if not parsed:
+            parsed = parse_intent_with_gemini(msg)
+            if parsed:
+                source = "llm"
+                print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
+                print(">>> KẾT QUẢ: Sử dụng trí tuệ nhân tạo GEMINI API (LLM) thành công!\n", flush=True)
+                write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: GEMINI API (LLM)")
+                logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: GEMINI API (LLM)")
+            
+        # 3. Nếu vẫn không nhận diện được (Gemini lỗi hoặc không có API key), sử dụng Regex làm dự phòng giao dịch ghi nhận chi tiêu
+        if not parsed:
             import re
             msg_lower = msg.lower()
-            
-            # Nhận diện số tiền (ưu tiên các số đi kèm đơn vị k, tr, triệu, củ, đồng...)
-            # Hỗ trợ số thực (ví dụ: 1.5tr, 1,5tr) và đơn vị củ/cu
             msg_normalized = msg_lower.replace(",", ".")
-            matches_with_unit = re.findall(r'(\d+(?:\.\d+)?)\s*(k|tr|triệu|trieu|đ|dong|đồng|cu|củ)', msg_normalized)
+            matches_with_unit = re.findall(r'(\d+(?:\.\d+)?)\s*(k|tr|triệu|trieu|đ|dong|đồng|cu|củ|lít|lit|chục|chuc)', msg_normalized)
             amount = 0.0
             if matches_with_unit:
                 val = float(matches_with_unit[0][0])
                 unit = matches_with_unit[0][1]
                 if unit in ['k']:
                     amount = val * 1000
+                elif unit in ['chục', 'chuc']:
+                    amount = val * 10000
+                elif unit in ['lít', 'lit']:
+                    amount = val * 100000
                 elif unit in ['tr', 'triệu', 'trieu', 'cu', 'củ']:
                     amount = val * 1000000
                 else:
                     amount = val
             else:
-                # Nếu không tìm thấy đơn vị, lấy số đầu tiên trong câu
                 amount_match = re.search(r'(\d+(?:\.\d+)?)', msg_normalized)
                 if amount_match:
                     amount = float(amount_match.group(1))
                     
-            # Nhận diện loại giao dịch
-            tx_type = "chi"
-            if any(re.search(r'\b' + re.escape(w) + r'\b', msg_lower) for w in ["thu", "lương", "nhận", "kiếm", "thưởng", "cộng"]):
-                tx_type = "thu"
+            if amount > 0:
+                tx_type = "chi"
+                if any(re.search(r'\b' + re.escape(w) + r'\b', msg_lower) for w in ["thu", "lương", "nhận", "kiếm", "thưởng", "cộng"]):
+                    tx_type = "thu"
+                    
+                msg_no_accent = remove_accents(msg_lower)
+                category = "Khác"
                 
-            # Nhận diện category bằng cả văn bản có dấu và không dấu
-            msg_no_accent = remove_accents(msg_lower)
-            category = "Khác"
-            
-            def has_keyword(text: str, keywords: list) -> bool:
-                return any(re.search(r'\b' + re.escape(kw) + r'\b', text) for kw in keywords)
-            
-            if has_keyword(msg_lower, ["ăn", "uống", "phở", "bánh", "cơm", "lẩu", "trưa", "sáng", "tối"]) or has_keyword(msg_no_accent, ["an", "uong", "pho", "banh", "com", "lau", "trua", "sang", "toi", "cafe"]):
-                category = "Ăn uống"
-            elif has_keyword(msg_lower, ["xe", "xăng", "grab", "taxi", "di chuyển", "đi lại"]) or has_keyword(msg_no_accent, ["xe", "xang", "grab", "taxi", "di chuyen", "di lai"]):
-                category = "Di chuyển"
-            elif has_keyword(msg_lower, ["lương", "thu nhập"]) or has_keyword(msg_no_accent, ["luong", "thu nhap"]):
-                category = "Lương"
-            elif has_keyword(msg_lower, ["học", "sách", "khoá học"]) or has_keyword(msg_no_accent, ["hoc", "sach", "khoa hoc"]):
-                category = "Học tập"
-            elif has_keyword(msg_lower, ["mua", "sắm", "shopee", "quần", "áo", "iphone", "điện thoại"]) or has_keyword(msg_no_accent, ["mua", "sam", "shopee", "quan", "ao", "iphone", "dien thoai"]):
-                category = "Mua sắm"
+                def has_keyword(text: str, keywords: list) -> bool:
+                    return any(re.search(r'\b' + re.escape(kw) + r'\b', text) for kw in keywords)
                 
-            description = msg
-            
-        if amount > 0:
-            tx_id = database.insert_giao_dich(tx_type, amount, category, description)
-            spent_str = f"{int(amount):,}".replace(",", ".")
-            
-            # Kiểm tra ngân sách cảnh báo
-            warning = ""
-            if tx_type == "chi":
-                match = database.find_matching_budget(category)
-                if match:
-                    b_cat, b_amt = match
-                    spent_total = database.get_monthly_spending_for_budget_category(b_cat)
-                    if spent_total > b_amt:
-                        warning = f" Cảnh báo: Vượt hạn mức ngân sách {b_cat}!"
-                    elif spent_total >= b_amt * 0.8:
-                        warning = f" Cảnh báo: Ngân sách {b_cat} đạt {int((spent_total/b_amt)*100)}% hạn mức."
-                        
-            action_label = "chi tiêu" if tx_type == "chi" else "thu nhập"
-            tts_response = f"Đã ghi nhận khoản {action_label} {spent_str}đ cho hạng mục {category}.{warning}"
-            
-            # Trả về cả JSON RPC Mock Call
-            json_rpc_call = {
-                "jsonrpc": "2.0",
-                "method": "tools/call",
-                "params": {
-                    "name": "ghi_nhan_thu_chi",
+                if has_keyword(msg_lower, ["ăn", "uống", "phở", "bánh", "cơm", "lẩu", "trưa", "sáng", "tối"]) or has_keyword(msg_no_accent, ["an", "uong", "pho", "banh", "com", "lau", "trua", "sang", "toi", "cafe"]):
+                    category = "Ăn uống"
+                elif has_keyword(msg_lower, ["xe", "xăng", "grab", "taxi", "di chuyển", "đi lại"]) or has_keyword(msg_no_accent, ["xe", "xang", "grab", "taxi", "di chuyen", "di lai"]):
+                    category = "Di chuyển"
+                elif has_keyword(msg_lower, ["lương", "thu nhập"]) or has_keyword(msg_no_accent, ["luong", "thu nhap"]):
+                    category = "Lương"
+                elif has_keyword(msg_lower, ["học", "sách", "khoá học"]) or has_keyword(msg_no_accent, ["hoc", "sach", "khoa hoc"]):
+                    category = "Học tập"
+                elif has_keyword(msg_lower, ["mua", "sắm", "shopee", "quần", "áo", "iphone", "điện thoại"]) or has_keyword(msg_no_accent, ["mua", "sam", "shopee", "quan", "ao", "iphone", "dien thoai"]):
+                    category = "Mua sắm"
+                
+                # Mock thành đối tượng parsed cho ghi_nhan_thu_chi
+                parsed = {
+                    "tool": "ghi_nhan_thu_chi",
                     "arguments": {
                         "transaction_type": tx_type,
                         "amount": amount,
                         "category": category,
-                        "description": description
+                        "description": msg.strip()
                     }
+                }
+                source = "regex"
+                print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
+                print(">>> KẾT QUẢ: Fallback sang REGEX MATCHING!\n", flush=True)
+                write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK")
+                logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK")
+        
+        if not parsed:
+            print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
+            print(">>> KẾT QUẢ: Không tìm thấy phương thức định tuyến phù hợp!\n", flush=True)
+            write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Không nhận diện được!")
+            logging.warning(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Không nhận diện được!")
+
+                
+        # 4. Thực thi công cụ đã được xác định
+        if parsed:
+            tool_name = parsed["tool"]
+            arguments = parsed["arguments"]
+            
+            # Gọi trực tiếp logic của server.py
+            if tool_name == "ghi_nhan_thu_chi":
+                tts_response = server.ghi_nhan_thu_chi(
+                    transaction_type=arguments.get("transaction_type", "chi"),
+                    amount=float(arguments.get("amount", 0)),
+                    category=arguments.get("category", "Khác"),
+                    description=arguments.get("description", "")
+                )
+            elif tool_name == "thong_ke_thu_chi":
+                tts_response = server.thong_ke_thu_chi()
+            elif tool_name == "huy_giao_dich_gan_nhat":
+                tts_response = server.huy_giao_dich_gan_nhat()
+            elif tool_name == "xem_ngan_sach":
+                tts_response = server.xem_ngan_sach()
+            elif tool_name == "thiet_lap_han_muc":
+                tts_response = server.thiet_lap_han_muc(
+                    category=arguments.get("category", "Khác"),
+                    amount=float(arguments.get("amount", 0))
+                )
+            elif tool_name == "sua_giao_dich":
+                tts_response = server.sua_giao_dich(
+                    transaction_id=int(arguments.get("transaction_id", -1)),
+                    transaction_type=arguments.get("transaction_type"),
+                    amount=float(arguments.get("amount")) if arguments.get("amount") is not None else None,
+                    category=arguments.get("category"),
+                    description=arguments.get("description")
+                )
+            elif tool_name == "truy_van_giao_dich":
+                tts_response = server.truy_van_giao_dich(
+                    transaction_type=arguments.get("transaction_type"),
+                    category=arguments.get("category"),
+                    time_range=arguments.get("time_range", "today"),
+                    limit=int(arguments.get("limit", 10))
+                )
+            else:
+                raise ValueError(f"Không nhận dạng được công cụ {tool_name}")
+                
+            # Tạo gói phản hồi JSON-RPC 2.0 mock để giả lập robot console
+            json_rpc_call = {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments
                 },
                 "id": 1
             }
@@ -249,15 +404,17 @@ def simulate_chat_api(chat: ChatInput):
             
             return {
                 "tts": tts_response,
+                "source": source,
                 "rpc_call": json_rpc_call,
                 "rpc_response": json_rpc_response
             }
         else:
             return {
-                "tts": "Tôi không nhận diện được số tiền trong câu nói của bạn. Hãy thử nói rõ hơn, ví dụ: 'Ăn phở hết 50k'.",
+                "tts": "Robot Xiaozhi không nhận diện được ý định của bạn. Hãy nói rõ ràng hơn, ví dụ: 'Ăn phở hết 50k' hoặc 'báo cáo thống kê tài chính'.",
                 "rpc_call": None,
                 "rpc_response": None
             }
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -10,7 +10,10 @@ from database import (
     set_ngan_sach,
     get_all_ngan_sach,
     find_matching_budget,
-    get_monthly_spending_for_budget_category
+    get_monthly_spending_for_budget_category,
+    delete_all_transactions,
+    delete_giao_dich_by_matching,
+    delete_giao_dich_by_id
 )
 import logging
 
@@ -281,6 +284,66 @@ def xem_ngan_sach() -> str:
     except Exception as e:
         logging.error(f"Lỗi xem ngân sách: {e}")
         return "Đã xảy ra lỗi khi truy vấn thông tin ngân sách."
+
+# ----------------------------------------------------
+# TOOL 8: XÓA GIAO DỊCH (DELETE TRANSACTION)
+# ----------------------------------------------------
+@mcp.tool()
+def xoa_giao_dich(
+    transaction_id: int = -1,
+    transaction_type: Optional[str] = None,
+    amount: Optional[float] = None,
+    category: Optional[str] = None
+) -> str:
+    """
+    Xóa một hoặc nhiều giao dịch khớp với ID hoặc khớp với các tiêu chí tìm kiếm.
+    Sau khi xóa, tổng số tiền còn lại sẽ được tính toán lại và thông báo lại cho người dùng.
+    
+    Args:
+        transaction_id: ID cụ thể của giao dịch muốn xóa. Nhập -1 nếu muốn xóa bằng các bộ lọc bên dưới hoặc xóa theo bộ lọc.
+        transaction_type: Lọc theo loại giao dịch: "thu" hoặc "chi".
+        amount: Lọc theo số tiền giao dịch chính xác.
+        category: Lọc theo danh mục giao dịch (Ví dụ: Ăn uống).
+    """
+    logging.info(f"Robot kích hoạt Tool: xoa_giao_dich | id={transaction_id}")
+    try:
+        deleted_ids = []
+        if transaction_id != -1:
+            success = delete_giao_dich_by_id(transaction_id)
+            if success:
+                deleted_ids = [transaction_id]
+        else:
+            deleted_ids = delete_giao_dich_by_matching(transaction_type, amount, category)
+            
+        if not deleted_ids:
+            return "Không tìm thấy giao dịch nào phù hợp để xóa."
+            
+        # Lấy thống kê mới sau khi xóa
+        summary = get_summary()
+        thu_str = format_currency(summary['tong_thu'])
+        chi_str = format_currency(summary['tong_chi'])
+        balance_str = format_currency(summary['tong_thu'] - summary['tong_chi'])
+        
+        return f"Đã xóa thành công các giao dịch có ID: {deleted_ids}. Tổng chi tiêu mới hiện tại là {chi_str} đồng, tổng thu là {thu_str} đồng. Số dư khả dụng mới là {balance_str} đồng."
+    except Exception as e:
+        logging.error(f"Lỗi khi xóa giao dịch: {e}")
+        return "Đã xảy ra lỗi, không thể thực hiện xóa giao dịch."
+
+# ----------------------------------------------------
+# TOOL 9: XÓA TOÀN BỘ LỊCH SỬ GIAO DỊCH (CLEAR ALL)
+# ----------------------------------------------------
+@mcp.tool()
+def xoa_toan_bo_lich_su() -> str:
+    """
+    Xóa toàn bộ các giao dịch đã ghi nhận trong lịch sử, đưa tất cả các khoản tổng thu, tổng chi và số dư về 0.
+    """
+    logging.info("Robot kích hoạt Tool: xoa_toan_bo_lich_su")
+    try:
+        delete_all_transactions()
+        return "Đã xóa toàn bộ lịch sử giao dịch thành công. Các khoản tổng chi tiêu, tổng thu nhập và số dư hiện tại đã được đưa về 0 đồng."
+    except Exception as e:
+        logging.error(f"Lỗi khi xóa toàn bộ lịch sử: {e}")
+        return "Đã xảy ra lỗi khi cố gắng xóa toàn bộ lịch sử giao dịch."
 
 # ĐIỂM CHẠY ỨNG DỤNG
 if __name__ == "__main__":

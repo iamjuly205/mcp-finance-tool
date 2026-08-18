@@ -1,0 +1,8 @@
+.env
+*.log
+*.db
+mcp_status.json
+__pycache__/
+*/__pycache__/
+.pytest_cache/
+*/.pytest_cache/
