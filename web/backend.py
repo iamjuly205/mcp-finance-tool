@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import database
 import server
 from web.gemini_parser import parse_intent_with_gemini, parse_with_gemini
-from web.keyword_parser import route_intent_with_keywords, parse_with_keywords
+from web.keyword_parser import route_intent_with_keywords, parse_with_keywords, extract_amount, detect_category, remove_accents as kp_remove_accents
 
 def remove_accents(input_str: str) -> str:
     s1 = 'ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯưẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỊịỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ'
@@ -258,63 +258,43 @@ def simulate_chat_api(chat: ChatInput):
             logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: SYSTEM KEYWORD (Cục bộ)")
         
         # 2. Nếu không khớp từ khóa, fallback sang Gemini (LLM)
+        learned_keywords = []
         if not parsed:
-            parsed = parse_intent_with_gemini(msg)
-            if parsed:
+            llm_result = parse_intent_with_gemini(msg)
+            if llm_result:
+                parsed = llm_result
                 source = "llm"
+                learned_keywords = llm_result.get("learned_keywords", [])
                 print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
-                print(">>> KẾT QUẢ: Sử dụng trí tuệ nhân tạo GEMINI API (LLM) thành công!\n", flush=True)
+                print(">>> KẾT QUẢ: Sử dụng GEMINI API (LLM) thành công!", flush=True)
+                if learned_keywords:
+                    print(f">>> 🧠 HỆ THỐNG ĐÃ HỌC: {learned_keywords} → danh mục '{parsed['arguments'].get('category', '?')}'\n", flush=True)
+                    write_routing_log(f"[SELF-LEARN] Học keyword(s): {learned_keywords} → '{parsed['arguments'].get('category', '?')}'")
+                else:
+                    print("", flush=True)
                 write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: GEMINI API (LLM)")
                 logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: GEMINI API (LLM)")
+
             
-        # 3. Nếu vẫn không nhận diện được (Gemini lỗi hoặc không có API key), sử dụng Regex làm dự phòng giao dịch ghi nhận chi tiêu
+        # 3. Nếu vẫn không nhận diện được (Gemini lỗi/không có API key), dùng Regex + Dynamic Category từ DB làm dự phòng
         if not parsed:
-            import re
-            msg_lower = msg.lower()
-            msg_normalized = msg_lower.replace(",", ".")
-            matches_with_unit = re.findall(r'(\d+(?:\.\d+)?)\s*(k|tr|triệu|trieu|đ|dong|đồng|cu|củ|lít|lit|chục|chuc)', msg_normalized)
-            amount = 0.0
-            if matches_with_unit:
-                val = float(matches_with_unit[0][0])
-                unit = matches_with_unit[0][1]
-                if unit in ['k']:
-                    amount = val * 1000
-                elif unit in ['chục', 'chuc']:
-                    amount = val * 10000
-                elif unit in ['lít', 'lit']:
-                    amount = val * 100000
-                elif unit in ['tr', 'triệu', 'trieu', 'cu', 'củ']:
-                    amount = val * 1000000
-                else:
-                    amount = val
-            else:
-                amount_match = re.search(r'(\d+(?:\.\d+)?)', msg_normalized)
-                if amount_match:
-                    amount = float(amount_match.group(1))
-                    
+            amount = extract_amount(msg)
             if amount > 0:
+                msg_lower = msg.lower()
+                msg_no_accent = kp_remove_accents(msg_lower)
+                
+                # Nhận diện loại giao dịch (thu/chi) với rule chính xác giống keyword_parser
+                thu_keywords = ["luong", "nhan luong", "nhan tien", "kiem duoc", "thuong", "duoc cho", "duoc tang", "thu nhap"]
                 tx_type = "chi"
-                if any(re.search(r'\b' + re.escape(w) + r'\b', msg_lower) for w in ["thu", "lương", "nhận", "kiếm", "thưởng", "cộng"]):
+                import re
+                if any(re.search(r'\b' + re.escape(kw) + r'\b', msg_no_accent) for kw in thu_keywords):
                     tx_type = "thu"
-                    
-                msg_no_accent = remove_accents(msg_lower)
-                category = "Khác"
+                elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\b(thu\s*chi|thue)\b', msg_no_accent):
+                    tx_type = "thu"
                 
-                def has_keyword(text: str, keywords: list) -> bool:
-                    return any(re.search(r'\b' + re.escape(kw) + r'\b', text) for kw in keywords)
+                # FIX R2: Tìm category từ DB (bao gồm cả dynamic categories)
+                category = detect_category(msg_no_accent, tx_type) or "Khác"
                 
-                if has_keyword(msg_lower, ["ăn", "uống", "phở", "bánh", "cơm", "lẩu", "trưa", "sáng", "tối"]) or has_keyword(msg_no_accent, ["an", "uong", "pho", "banh", "com", "lau", "trua", "sang", "toi", "cafe"]):
-                    category = "Ăn uống"
-                elif has_keyword(msg_lower, ["xe", "xăng", "grab", "taxi", "di chuyển", "đi lại"]) or has_keyword(msg_no_accent, ["xe", "xang", "grab", "taxi", "di chuyen", "di lai"]):
-                    category = "Di chuyển"
-                elif has_keyword(msg_lower, ["lương", "thu nhập"]) or has_keyword(msg_no_accent, ["luong", "thu nhap"]):
-                    category = "Lương"
-                elif has_keyword(msg_lower, ["học", "sách", "khoá học"]) or has_keyword(msg_no_accent, ["hoc", "sach", "khoa hoc"]):
-                    category = "Học tập"
-                elif has_keyword(msg_lower, ["mua", "sắm", "shopee", "quần", "áo", "iphone", "điện thoại"]) or has_keyword(msg_no_accent, ["mua", "sam", "shopee", "quan", "ao", "iphone", "dien thoai"]):
-                    category = "Mua sắm"
-                
-                # Mock thành đối tượng parsed cho ghi_nhan_thu_chi
                 parsed = {
                     "tool": "ghi_nhan_thu_chi",
                     "arguments": {
@@ -326,9 +306,9 @@ def simulate_chat_api(chat: ChatInput):
                 }
                 source = "regex"
                 print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
-                print(">>> KẾT QUẢ: Fallback sang REGEX MATCHING!\n", flush=True)
-                write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK")
-                logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK")
+                print(">>> KẾT QUẢ: Fallback sang REGEX MATCHING (với Dynamic Category DB)!\n", flush=True)
+                write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK (category={category})")
+                logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK (category={category})")
         
         if not parsed:
             print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
@@ -405,6 +385,7 @@ def simulate_chat_api(chat: ChatInput):
             return {
                 "tts": tts_response,
                 "source": source,
+                "learned_keywords": learned_keywords,
                 "rpc_call": json_rpc_call,
                 "rpc_response": json_rpc_response
             }

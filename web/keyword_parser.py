@@ -16,6 +16,9 @@ def remove_accents(input_str: str) -> str:
     return "".join(res)
 
 def extract_amount(text: str) -> float:
+    # FIX K4: Loại bỏ các mẫu "ID số" trước để tránh đọc sai số ID thành số tiền
+    # Ví dụ: "sửa ID 5 thành 200k" -> bỏ "id 5" trước khi tìm số tiền
+    text = re.sub(r'\bid\s*\d+\b', '', text, flags=re.IGNORECASE)
     text_lower = text.lower().replace(",", ".")
     
     # 1. Hỗ trợ các trường hợp đặc biệt viết bằng chữ như "triệu rưỡi", "củ rưỡi", "trăm rưỡi", "chục rưỡi"
@@ -87,10 +90,19 @@ def clean_voice_message(message: str) -> str:
         
     return msg_clean
 
-def detect_category(msg_no_accent: str) -> Optional[str]:
+def detect_category(msg_no_accent: str, tx_type: Optional[str] = None) -> Optional[str]:
     mappings = database.get_keyword_mappings()
+    if not mappings:
+        return None
+    # Ưu tiên: khớp tx_type trước, rồi từ khóa dài hơn (cụ thể hơn) lên trước
+    if tx_type:
+        mappings = sorted(mappings, key=lambda m: (m.get("type") == tx_type, len(remove_accents(m["keyword"]))), reverse=True)
+    else:
+        mappings = sorted(mappings, key=lambda m: len(remove_accents(m["keyword"])), reverse=True)
     for m in mappings:
-        kw = m["keyword"].lower()
+        kw = m["keyword"].lower().strip()
+        if not kw:
+            continue
         kw_no_accent = remove_accents(kw)
         pattern = r'\b' + re.escape(kw_no_accent) + r'\b'
         if re.search(pattern, msg_no_accent):
@@ -121,14 +133,15 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
         return {"tool": "xem_ngan_sach", "arguments": {}}
         
     # 4. TOOL: thiet_lap_han_muc (Set Budget)
-    if has_keyword(msg_no_accent, ["cai han muc", "dat han muc", "dat ngan sach", "cai ngan sach", "thiet lap han muc", "gioi han chi tieu"]):
+    if has_keyword(msg_no_accent, ["cai han muc", "dat han muc", "dat ngan sach", "cai ngan sach", "thiet lap han muc", "gioi han chi tieu", "ngan sach cho"]):
         amount = extract_amount(message)
-        category = detect_category(msg_no_accent)
-        if amount > 0 and category:
+        category = detect_category(msg_no_accent, "chi")
+        if amount > 0 and category and category != "Khác":
             return {
                 "tool": "thiet_lap_han_muc",
                 "arguments": {"category": category, "amount": amount}
             }
+        # Nếu không tìm được category -> trả None để LLM xử lý (tốt hơn)
         return None
         
     # 5. TOOL: sua_giao_dich (Edit)
@@ -141,10 +154,14 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
         amount = extract_amount(message)
         category = detect_category(msg_no_accent)
         
+        # FIX N1: Dùng strict pattern giống ghi_nhan_thu_chi, tránh "thuê" bị nhận là "thu"
         tx_type = None
-        if "thu" in msg_no_accent or "luong" in msg_no_accent:
+        thu_keywords_strict = ["luong", "nhan luong", "nhan tien", "kiem duoc", "thuong", "thu nhap"]
+        if has_keyword(msg_no_accent, thu_keywords_strict):
             tx_type = "thu"
-        elif "chi" in msg_no_accent or "tieu" in msg_no_accent:
+        elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\b(thu\s*chi|thue)\b', msg_no_accent):
+            tx_type = "thu"
+        elif re.search(r'\b(chi|tieu)\b', msg_no_accent):
             tx_type = "chi"
             
         if amount > 0 or category or tx_type:
@@ -159,6 +176,7 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
                 }
             }
         return None
+
         
     # 6. TOOL: truy_van_giao_dich (Query)
     if has_keyword(msg_no_accent, ["liet ke", "tim kiem", "truy van", "xem cac khoan", "lich su giao dich"]):
@@ -171,14 +189,19 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
             time_range = "this_month"
         elif "tat ca" in msg_no_accent or "tu truoc" in msg_no_accent:
             time_range = "all"
+        elif "hom nay" in msg_no_accent:
+            time_range = "today"
             
+        # FIX K7: "thu chi" = xem tất cả, không filter theo type
         tx_type = None
-        if "thu" in msg_no_accent or "luong" in msg_no_accent:
+        if re.search(r'\bthu\s+chi\b', msg_no_accent):  # "thu chi" → None (xem tất cả)
+            tx_type = None
+        elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\bthue\b', msg_no_accent):
             tx_type = "thu"
-        elif "chi" in msg_no_accent or "tieu" in msg_no_accent:
+        elif re.search(r'\b(chi|tieu)\b', msg_no_accent):
             tx_type = "chi"
             
-        category = detect_category(msg_no_accent)
+        category = detect_category(msg_no_accent, tx_type)
         
         return {
             "tool": "truy_van_giao_dich",
@@ -193,11 +216,17 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
     # 7. TOOL: ghi_nhan_thu_chi (Giao dịch thu/chi thông thường)
     amount = extract_amount(message)
     if amount > 0:
-        category = detect_category(msg_no_accent)
+        # FIX K1: Phát hiện thu nhập chính xác hơn – từ "thu" phải đứng độc lập
+        # Tránh false positive: "thuê nhà", "thú cưng" → vẫn là chi
+        thu_keywords_strict = ["luong", "nhan luong", "nhan tien", "kiem duoc", "thuong", "duoc cho", "duoc tang", "thu nhap", "hoa hong", "ban do", "thu no", "doi no", "co tuc"]
         tx_type = "chi"
-        if has_keyword(msg_no_accent, ["thu", "luong", "nhan", "kiem", "thuong", "cong", "duoc cho"]):
+        if has_keyword(msg_no_accent, thu_keywords_strict):
             tx_type = "thu"
-            
+        # Chỉ khớp "thu" nếu không nằm trong "thuê", "thú", "thu chi"
+        elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\b(thu\s*chi|thue|thu\s+cung)\b', msg_no_accent):
+            tx_type = "thu"
+
+        category = detect_category(msg_no_accent, tx_type)
         clean_desc = clean_voice_message(message)
         
         # Nếu không tìm thấy category, hoặc khớp category "Khác" -> Fallback sang LLM để phân loại tốt hơn

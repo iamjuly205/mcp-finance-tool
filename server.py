@@ -13,7 +13,9 @@ from database import (
     get_monthly_spending_for_budget_category,
     delete_all_transactions,
     delete_giao_dich_by_matching,
-    delete_giao_dich_by_id
+    delete_giao_dich_by_id,
+    add_keyword_mapping,
+    normalize_category_name
 )
 import logging
 
@@ -227,20 +229,27 @@ def sua_giao_dich(
 @mcp.tool()
 def thiet_lap_han_muc(category: str, amount: float) -> str:
     """
-    Thiết lập hoặc cập nhật hạn mức chi tiêu hàng tháng cho một danh mục (ví dụ: Ăn uống, Mua sắm).
+    Thiết lập hoặc cập nhật hạn mức chi tiêu hàng tháng cho một danh mục (ví dụ: Ăn uống, Mua sắm, Đi chơi).
     
     Args:
-        category: Danh mục chi tiêu muốn thiết lập hạn mức (Ví dụ: Ăn uống).
+        category: Danh mục chi tiêu muốn thiết lập hạn mức (Ví dụ: Ăn uống, Đi chơi).
         amount: Số tiền hạn mức tối đa cho cả tháng (phải lớn hơn 0).
     """
     if amount <= 0:
         return "Lỗi: Số tiền hạn mức phải lớn hơn 0."
         
-    logging.info(f"Robot kích hoạt Tool: thiet_lap_han_muc | category={category}, amount={amount}")
+    category_norm = normalize_category_name(category)
+    logging.info(f"Robot kích hoạt Tool: thiet_lap_han_muc | category={category_norm}, amount={amount}")
     try:
-        set_ngan_sach(category, amount)
+        set_ngan_sach(category_norm, amount)
+        # Tự động lưu từ khóa phân loại mới cho danh mục này
+        try:
+            add_keyword_mapping(category_norm.lower(), category_norm, "chi")
+        except Exception:
+            pass
+            
         amount_str = format_currency(amount)
-        return f"Đã thiết lập hạn mức chi tiêu hàng tháng cho danh mục {category} là {amount_str} đồng."
+        return f"Đã thiết lập hạn mức chi tiêu hàng tháng cho danh mục {category_norm} là {amount_str} đồng."
     except Exception as e:
         logging.error(f"Lỗi thiết lập ngân sách: {e}")
         return "Đã xảy ra lỗi, không thể thiết lập hạn mức."

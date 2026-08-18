@@ -498,16 +498,47 @@ def get_all_ngan_sach() -> List[Dict[str, Any]]:
         conn.close()
 
 def is_category_match(cat1: str, cat2: str) -> bool:
-    """Kiểm tra xem hai danh mục có liên quan đến nhau hay không (khớp từ hoặc chứa nhau)"""
+    """
+    Kiểm tra xem hai danh mục có THỰC SỰ liên quan đến nhau không.
+    Ưu tiên khớp chính xác, sau đó khớp chứa nhau, cuối cùng mới dùng từ chung.
+    
+    Quy tắc an toàn:
+    - "Đi chơi" vs "Đi ăn"  → False ✅ (chỉ chung "đi" – quá ngắn/chung chung)
+    - "Đi chơi" vs "Đi chơi Đà Lạt" → True ✅ (chuỗi chứa nhau)
+    - "Ăn uống" vs "Ăn vặt" → False ✅ (không có từ nội dung chung ≥4 ký tự)
+    - "Sức khỏe" vs "Chăm sóc sức khỏe" → True ✅ (chứa "sức khỏe")
+    """
     c1 = cat1.lower().strip()
     c2 = cat2.lower().strip()
-    if c1 == c2 or c1 in c2 or c2 in c1:
+    
+    # 1. Khớp chính xác (không phân biệt hoa thường)
+    if c1 == c2:
         return True
     
-    stop_words = {"và", "cho", "của", "tại", "ở", "bằng", "với", "các", "những", "để"}
-    words1 = {w for w in c1.split() if w not in stop_words and len(w) >= 2}
-    words2 = {w for w in c2.split() if w not in stop_words and len(w) >= 2}
-    return bool(words1 & words2)
+    # 2. Một chuỗi chứa đầy đủ chuỗi kia (e.g. "Ăn uống" chứa trong "Chi phí ăn uống")
+    if c1 in c2 or c2 in c1:
+        return True
+
+    # 3. Từ chung có nghĩa:
+    # - Các từ quá ngắn/chung chung bị loại (len < 4 hoặc nằm trong weak_words)
+    # - "đi", "ăn", "mua", "chi", "thu", "và", "cho" → loại bỏ
+    weak_words = {
+        # Giới từ, liên từ
+        "và", "cho", "của", "tại", "ở", "bằng", "với", "các", "những", "để",
+        # Động từ phổ biến, dễ nhầm giữa các danh mục
+        "đi", "ăn", "mua", "chi", "thu", "có", "là", "làm", "dùng", "tiêu",
+        # Từ ngắn < 3 ký tự sẽ bị loại qua len check bên dưới
+    }
+    
+    words1 = {w for w in c1.split() if w not in weak_words and len(w) >= 4}
+    words2 = {w for w in c2.split() if w not in weak_words and len(w) >= 4}
+    
+    # Chỉ khớp khi có ít nhất 1 từ nội dung ý nghĩa chung
+    if words1 and words2 and bool(words1 & words2):
+        return True
+    
+    return False
+
 
 def find_matching_budget(category: str) -> Optional[Tuple[str, float]]:
     """Tìm hạn mức chi tiêu khớp nhất với danh mục chi tiêu"""
@@ -622,5 +653,30 @@ def update_keyword_mapping(mapping_id: int, keyword: str, category: str, transac
     except Exception as e:
         logging.error(f"Lỗi khi cập nhật từ khóa: {e}")
         raise e
+    finally:
+        conn.close()
+
+def get_all_categories() -> List[str]:
+    """Lấy danh sách tất cả các danh mục độc nhất từ keywords_mapping, ngan_sach và thu_chi_logs"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        categories = set(["Ăn uống", "Di chuyển", "Học tập", "Mua sắm", "Lương", "Khác"])
+        cursor.execute("SELECT DISTINCT category FROM keywords_mapping")
+        for row in cursor.fetchall():
+            if row[0]:
+                categories.add(row[0].strip())
+        cursor.execute("SELECT DISTINCT category FROM ngan_sach")
+        for row in cursor.fetchall():
+            if row[0]:
+                categories.add(row[0].strip())
+        cursor.execute("SELECT DISTINCT category FROM thu_chi_logs")
+        for row in cursor.fetchall():
+            if row[0]:
+                categories.add(row[0].strip())
+        return sorted(list(categories))
+    except Exception as e:
+        logging.error(f"Lỗi khi lấy danh sách danh mục: {e}")
+        return ["Ăn uống", "Di chuyển", "Học tập", "Mua sắm", "Lương", "Khác"]
     finally:
         conn.close()
