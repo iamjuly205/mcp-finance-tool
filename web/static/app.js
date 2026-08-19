@@ -393,7 +393,24 @@ function renderDonutChart(transactions) {
         return;
     }
 
-    const colors = ['#10B981', '#34D399', '#059669', '#047857', '#065f46', '#6EE7B7', '#A7F3D0'];
+    const categoryColorsMap = {
+        'Ăn uống': '#10B981',   // Xanh ngọc / Emerald
+        'Di chuyển': '#3B82F6', // Xanh dương / Royal Blue
+        'Mua sắm': '#8B5CF6',   // Tím / Vibrant Purple
+        'Học tập': '#F59E0B',   // Vàng cam / Warm Amber
+        'Đi chơi': '#EC4899',   // Hồng / Hot Pink
+        'Sức khỏe': '#14B8A6',  // Xanh ngọc lam / Teal
+        'Nhà ở': '#6366F1',     // Chàm / Indigo
+        'Khác': '#F97316'       // Cam / Bright Orange
+    };
+
+    const paletteFallback = [
+        '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899',
+        '#14B8A6', '#F97316', '#6366F1', '#06B6D4', '#E11D48',
+        '#A855F7', '#84CC16'
+    ];
+
+    const colors = labels.map((cat, idx) => categoryColorsMap[cat] || paletteFallback[idx % paletteFallback.length]);
 
     expenseChartInstance = new Chart(ctx, {
         type: 'doughnut',
@@ -401,7 +418,7 @@ function renderDonutChart(transactions) {
             labels: labels,
             datasets: [{
                 data: data,
-                backgroundColor: colors.slice(0, labels.length),
+                backgroundColor: colors,
                 borderColor: 'rgba(5, 8, 7, 0.9)',
                 borderWidth: 2,
                 hoverOffset: 6
