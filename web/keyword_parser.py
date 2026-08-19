@@ -36,15 +36,15 @@ def extract_amount(text: str) -> float:
         if re.search(pattern, text_lower):
             return val
 
-    # 2. Hỗ trợ đơn vị tắt dạng số + chữ: 1.5tr, 2 củ, 3 lít, 5 chục, 150k
+    # 2. Hỗ trợ đơn vị tắt dạng số + chữ: 1.5tr, 2 củ, 3 lít, 5 chục, 150k, 20 nghìn
     matches_with_unit = re.findall(
-        r'(\d+(?:\.\d+)?)\s*(k|tr|triệu|trieu|đ|dong|đồng|cu|củ|lít|lit|chục|chuc)', 
+        r'(\d+(?:\.\d+)?)\s*(k|tr|triệu|trieu|đ|dong|đồng|cu|củ|lít|lit|chục|chuc|nghìn|nghin)', 
         text_lower
     )
     if matches_with_unit:
         val = float(matches_with_unit[0][0])
         unit = matches_with_unit[0][1]
-        if unit in ['k']:
+        if unit in ['k', 'nghìn', 'nghin']:
             return val * 1000
         elif unit in ['chục', 'chuc']:
             return val * 10000
@@ -90,22 +90,22 @@ def clean_voice_message(message: str) -> str:
         
     return msg_clean
 
-def detect_category(msg_no_accent: str, tx_type: Optional[str] = None) -> Optional[str]:
+def detect_category(msg: str, tx_type: Optional[str] = None) -> Optional[str]:
+    """Phát hiện danh mục từ tin nhắn tiếng Việt có dấu (lowercase)."""
     mappings = database.get_keyword_mappings()
     if not mappings:
         return None
     # Ưu tiên: khớp tx_type trước, rồi từ khóa dài hơn (cụ thể hơn) lên trước
     if tx_type:
-        mappings = sorted(mappings, key=lambda m: (m.get("type") == tx_type, len(remove_accents(m["keyword"]))), reverse=True)
+        mappings = sorted(mappings, key=lambda m: (m.get("type") == tx_type, len(m["keyword"])), reverse=True)
     else:
-        mappings = sorted(mappings, key=lambda m: len(remove_accents(m["keyword"])), reverse=True)
+        mappings = sorted(mappings, key=lambda m: len(m["keyword"]), reverse=True)
     for m in mappings:
         kw = m["keyword"].lower().strip()
         if not kw:
             continue
-        kw_no_accent = remove_accents(kw)
-        pattern = r'\b' + re.escape(kw_no_accent) + r'\b'
-        if re.search(pattern, msg_no_accent):
+        pattern = r'\b' + re.escape(kw) + r'\b'
+        if re.search(pattern, msg):
             return m["category"]
     return None
 
@@ -115,27 +115,31 @@ def has_keyword(text: str, keywords: list) -> bool:
 def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
     """
     Phân loại câu lệnh người dùng thành 1 trong 7 MCP tools bằng từ khóa cục bộ.
+    Nhận input tiếng Việt có dấu, so sánh trực tiếp không cần strip dấu.
     Trả về dict chứa tên tool và tham số, hoặc None nếu không nhận diện được.
     """
-    msg_lower = message.lower()
-    msg_no_accent = remove_accents(msg_lower)
-    
+    msg_lower = message.lower()  # Tiếng Việt có dấu, chỉ lowercase
+
     # 1. TOOL: thong_ke_thu_chi
-    if has_keyword(msg_no_accent, ["thong ke", "bao cao tai chinh", "bao cao thu chi", "tong thu chi"]):
+    if has_keyword(msg_lower, ["thống kê", "báo cáo tài chính", "báo cáo thu chi", "tổng thu chi", "thong ke", "bao cao"]):
         return {"tool": "thong_ke_thu_chi", "arguments": {}}
-        
+
     # 2. TOOL: huy_giao_dich_gan_nhat (Undo)
-    if has_keyword(msg_no_accent, ["hoan tac", "huy giao dich", "xoa giao dich", "xoa khoan vua nhap", "xoa gan nhat"]):
+    if has_keyword(msg_lower, ["hoàn tác", "hủy giao dịch", "xóa giao dịch", "xóa khoản vừa nhập", "xóa gần nhất",
+                               "hoan tac", "huy giao dich", "xoa giao dich"]):
         return {"tool": "huy_giao_dich_gan_nhat", "arguments": {}}
-        
+
     # 3. TOOL: xem_ngan_sach
-    if has_keyword(msg_no_accent, ["xem ngan sach", "bao cao ngan sach", "tinh hinh ngan sach", "con bao nhieu han muc"]):
+    if has_keyword(msg_lower, ["xem ngân sách", "báo cáo ngân sách", "tình hình ngân sách", "còn bao nhiêu hạn mức",
+                               "xem ngan sach", "han muc"]):
         return {"tool": "xem_ngan_sach", "arguments": {}}
-        
+
     # 4. TOOL: thiet_lap_han_muc (Set Budget)
-    if has_keyword(msg_no_accent, ["cai han muc", "dat han muc", "dat ngan sach", "cai ngan sach", "thiet lap han muc", "gioi han chi tieu", "ngan sach cho"]):
+    if has_keyword(msg_lower, ["cài hạn mức", "đặt hạn mức", "đặt ngân sách", "cài ngân sách",
+                               "thiết lập hạn mức", "giới hạn chi tiêu", "ngân sách cho",
+                               "cai han muc", "dat han muc", "thiet lap han muc"]):
         amount = extract_amount(message)
-        category = detect_category(msg_no_accent, "chi")
+        category = detect_category(msg_lower, "chi")
         if amount > 0 and category and category != "Khác":
             return {
                 "tool": "thiet_lap_han_muc",
@@ -143,27 +147,28 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
             }
         # Nếu không tìm được category -> trả None để LLM xử lý (tốt hơn)
         return None
-        
+
     # 5. TOOL: sua_giao_dich (Edit)
-    if has_keyword(msg_no_accent, ["sua giao dich", "cap nhat giao dich", "sua id", "thay doi giao dich"]):
+    if has_keyword(msg_lower, ["sửa giao dịch", "cập nhật giao dịch", "sửa id", "thay đổi giao dịch",
+                               "sua giao dich", "cap nhat giao dich"]):
         transaction_id = -1
-        id_match = re.search(r'\bid\s*(\d+)\b', msg_no_accent)
+        id_match = re.search(r'\bid\s*(\d+)\b', msg_lower)
         if id_match:
             transaction_id = int(id_match.group(1))
-            
+
         amount = extract_amount(message)
-        category = detect_category(msg_no_accent)
-        
+        category = detect_category(msg_lower)
+
         # FIX N1: Dùng strict pattern giống ghi_nhan_thu_chi, tránh "thuê" bị nhận là "thu"
         tx_type = None
-        thu_keywords_strict = ["luong", "nhan luong", "nhan tien", "kiem duoc", "thuong", "thu nhap"]
-        if has_keyword(msg_no_accent, thu_keywords_strict):
+        thu_keywords_strict = ["lương", "nhận lương", "nhận tiền", "kiếm được", "thưởng", "thu nhập"]
+        if has_keyword(msg_lower, thu_keywords_strict):
             tx_type = "thu"
-        elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\b(thu\s*chi|thue)\b', msg_no_accent):
+        elif re.search(r'\bthu\b', msg_lower) and not re.search(r'\b(thu\s*chi|thuê)\b', msg_lower):
             tx_type = "thu"
-        elif re.search(r'\b(chi|tieu)\b', msg_no_accent):
+        elif re.search(r'\b(chi|tiêu)\b', msg_lower):
             tx_type = "chi"
-            
+
         if amount > 0 or category or tx_type:
             return {
                 "tool": "sua_giao_dich",
@@ -177,32 +182,32 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
             }
         return None
 
-        
     # 6. TOOL: truy_van_giao_dich (Query)
-    if has_keyword(msg_no_accent, ["liet ke", "tim kiem", "truy van", "xem cac khoan", "lich su giao dich"]):
+    if has_keyword(msg_lower, ["liệt kê", "tìm kiếm", "truy vấn", "xem các khoản", "lịch sử giao dịch",
+                               "liet ke", "tim kiem", "truy van", "lich su"]):
         time_range = "today"
-        if "hom qua" in msg_no_accent:
+        if any(kw in msg_lower for kw in ["hôm qua", "hom qua"]):
             time_range = "yesterday"
-        elif "tuan nay" in msg_no_accent:
+        elif any(kw in msg_lower for kw in ["tuần này", "tuan nay"]):
             time_range = "this_week"
-        elif "thang nay" in msg_no_accent:
+        elif any(kw in msg_lower for kw in ["tháng này", "thang nay"]):
             time_range = "this_month"
-        elif "tat ca" in msg_no_accent or "tu truoc" in msg_no_accent:
+        elif any(kw in msg_lower for kw in ["tất cả", "tat ca", "từ trước", "tu truoc"]):
             time_range = "all"
-        elif "hom nay" in msg_no_accent:
+        elif any(kw in msg_lower for kw in ["hôm nay", "hom nay"]):
             time_range = "today"
-            
+
         # FIX K7: "thu chi" = xem tất cả, không filter theo type
         tx_type = None
-        if re.search(r'\bthu\s+chi\b', msg_no_accent):  # "thu chi" → None (xem tất cả)
+        if re.search(r'\bthu\s+chi\b', msg_lower):
             tx_type = None
-        elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\bthue\b', msg_no_accent):
+        elif re.search(r'\bthu\b', msg_lower) and not re.search(r'\bthuê\b', msg_lower):
             tx_type = "thu"
-        elif re.search(r'\b(chi|tieu)\b', msg_no_accent):
+        elif re.search(r'\b(chi|tiêu)\b', msg_lower):
             tx_type = "chi"
-            
-        category = detect_category(msg_no_accent, tx_type)
-        
+
+        category = detect_category(msg_lower, tx_type)
+
         return {
             "tool": "truy_van_giao_dich",
             "arguments": {
@@ -216,20 +221,21 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
     # 7. TOOL: ghi_nhan_thu_chi (Giao dịch thu/chi thông thường)
     amount = extract_amount(message)
     if amount > 0:
-        # FIX K1: Phát hiện thu nhập chính xác hơn – từ "thu" phải đứng độc lập
-        # Tránh false positive: "thuê nhà", "thú cưng" → vẫn là chi
-        thu_keywords_strict = ["luong", "nhan luong", "nhan tien", "kiem duoc", "thuong", "duoc cho", "duoc tang", "thu nhap", "hoa hong", "ban do", "thu no", "doi no", "co tuc"]
+        # FIX K1: Phát hiện thu nhập chính xác hơn – tránh false positive: "thuê nhà" → vẫn là chi
+        thu_keywords_strict = [
+            "lương", "nhận lương", "nhận tiền", "kiếm được", "thưởng", "được cho",
+            "được tặng", "thu nhập", "hoa hồng", "bán đồ", "thu nợ", "đòi nợ", "cổ tức"
+        ]
         tx_type = "chi"
-        if has_keyword(msg_no_accent, thu_keywords_strict):
+        if has_keyword(msg_lower, thu_keywords_strict):
             tx_type = "thu"
-        # Chỉ khớp "thu" nếu không nằm trong "thuê", "thú", "thu chi"
-        elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\b(thu\s*chi|thue|thu\s+cung)\b', msg_no_accent):
+        elif re.search(r'\bthu\b', msg_lower) and not re.search(r'\b(thu\s*chi|thuê|thu\s+cùng)\b', msg_lower):
             tx_type = "thu"
 
-        category = detect_category(msg_no_accent, tx_type)
+        category = detect_category(msg_lower, tx_type)
         clean_desc = clean_voice_message(message)
-        
-        # Nếu không tìm thấy category, hoặc khớp category "Khác" -> Fallback sang LLM để phân loại tốt hơn
+
+        # Nếu không tìm thấy category -> Fallback sang LLM
         if category and category != "Khác":
             return {
                 "tool": "ghi_nhan_thu_chi",
@@ -240,7 +246,7 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
                     "description": clean_desc
                 }
             }
-            
+
     return None
 
 def parse_with_keywords(message: str) -> Optional[Dict[str, Any]]:

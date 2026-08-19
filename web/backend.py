@@ -281,19 +281,18 @@ def simulate_chat_api(chat: ChatInput):
             amount = extract_amount(msg)
             if amount > 0:
                 msg_lower = msg.lower()
-                msg_no_accent = kp_remove_accents(msg_lower)
-                
+
                 # Nhận diện loại giao dịch (thu/chi) với rule chính xác giống keyword_parser
-                thu_keywords = ["luong", "nhan luong", "nhan tien", "kiem duoc", "thuong", "duoc cho", "duoc tang", "thu nhap"]
+                thu_keywords = ["lương", "nhận lương", "nhận tiền", "kiếm được", "thưởng", "được cho", "được tặng", "thu nhập"]
                 tx_type = "chi"
                 import re
-                if any(re.search(r'\b' + re.escape(kw) + r'\b', msg_no_accent) for kw in thu_keywords):
+                if any(re.search(r'\b' + re.escape(kw) + r'\b', msg_lower) for kw in thu_keywords):
                     tx_type = "thu"
-                elif re.search(r'\bthu\b', msg_no_accent) and not re.search(r'\b(thu\s*chi|thue)\b', msg_no_accent):
+                elif re.search(r'\bthu\b', msg_lower) and not re.search(r'\b(thu\s*chi|thuê)\b', msg_lower):
                     tx_type = "thu"
-                
+
                 # FIX R2: Tìm category từ DB (bao gồm cả dynamic categories)
-                category = detect_category(msg_no_accent, tx_type) or "Khác"
+                category = detect_category(msg_lower, tx_type) or "Khác"
                 
                 parsed = {
                     "tool": "ghi_nhan_thu_chi",

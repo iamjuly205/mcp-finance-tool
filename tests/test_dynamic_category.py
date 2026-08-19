@@ -23,8 +23,8 @@ def test_dynamic_category_and_auto_keyword():
     categories = database.get_all_categories()
     assert "Đi chơi" in categories
     
-    from web.keyword_parser import remove_accents
-    detected = detect_category(remove_accents("đi chơi"))
+    from web.keyword_parser import detect_category
+    detected = detect_category("đi chơi")
     assert detected == "Đi chơi"
     
     # 3. Record spending for "đi chơi"

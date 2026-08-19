@@ -1,4 +1,4 @@
-﻿# web/gemini_parser.py
+# web/gemini_parser.py
 import os
 import re
 import json
@@ -54,66 +54,33 @@ _WEAK = {
 
 def _extract_candidates(raw_message: str, primary_kw: str, category: str) -> List[str]:
     """
-    Tu cau goc + keyword LLM, trich xuat bo tu khoa de luu vao DB.
-    Muc tieu: lan sau input tuong tu, keyword_parser tu xu ly khong can LLM.
+    Chỉ lưu keyword chính mà LLM đã trích xuất và tên category.
+    Không sinh n-gram từ câu gốc vì dễ tạo keyword rác (ví dụ: 'đi chơi 2', 'mức đi chơi').
+    LLM đã trích xuất đúng keyword rồi — tin tưởng kết quả đó.
     """
     seen = set()
     result = []
 
     def add(kw: str):
         kw = kw.strip().lower()
-        if kw and len(kw) >= 3 and kw not in _BLACKLIST_KW and kw not in seen:
+        if kw and len(kw) >= 2 and kw not in _BLACKLIST_KW and kw not in seen:
             seen.add(kw)
             result.append(kw)
 
-    # 1. Primary keyword tu LLM (uu tien cao nhat)
+    # 1. Primary keyword do LLM trích xuất (ưu tiên cao nhất, đã chính xác)
     if primary_kw:
         add(primary_kw)
 
-    # 2. Ten category viet thuong (co dau + khong dau)
+    # 2. Tên category viết thường có dấu (để nhận diện khi user gõ tên category)
     cat_l = category.strip().lower()
     add(cat_l)
-    cat_na = _remove_accents_local(cat_l)
-    if cat_na != cat_l:
-        add(cat_na)
 
-    # 3. N-gram tu cau goc, chi lay gram lien quan den keyword/category
-    msg = re.sub(
-        r'\d+(?:[.,]\d+)?\s*(k|tr|trieu|dong|cu|lit|chuc|d)\b', '', raw_message, flags=re.IGNORECASE
-    )
-    msg = re.sub(r'\b\d{3,}\b', '', msg)
-    msg = re.sub(r'\s+', ' ', msg).strip().lower()
-    msg_na = _remove_accents_local(msg)
-
-    pk_na = _remove_accents_local(primary_kw.lower()) if primary_kw else ""
-    words_na = msg_na.split()
-
-    for i in range(len(words_na)):
-        for n in range(1, 4):
-            if i + n > len(words_na):
-                break
-            gram_na = " ".join(words_na[i:i+n])
-            gram_words = gram_na.split()
-            # Bo qua gram toan tu yeu
-            if all(w in _WEAK for w in gram_words):
-                continue
-            relevant = (
-                (pk_na and (pk_na in gram_na or gram_na in pk_na)) or
-                (cat_na and (cat_na in gram_na or gram_na in cat_na))
-            )
-            if relevant:
-                # Tim lai gram co dau tu words goc
-                words_orig = msg.split()
-                gram_orig = " ".join(words_orig[i:i+n]) if i+n <= len(words_orig) else gram_na
-                add(gram_orig)
-                if gram_na != gram_orig:
-                    add(gram_na)
-
-    # Loai tu khoa da co trong DB (tru primary keyword)
+    # Lọc bỏ keyword đã có trong DB (trừ primary_kw)
     existing = {m["keyword"].lower().strip() for m in database.get_keyword_mappings()}
     pk_clean = primary_kw.strip().lower() if primary_kw else ""
     filtered = [c for c in result if c == pk_clean or c not in existing]
-    return filtered[:6]
+    return filtered
+
 
 
 def _save_keywords(keywords: List[str], category: str, tx_type: str) -> List[str]:
@@ -147,32 +114,32 @@ def parse_intent_with_gemini(message: str):
 
     categories_list = database.get_all_categories()
 
-    prompt = f"""Ban la robot tro ly tai chinh Xiaozhi. Phan tich cau noi nguoi dung thanh lenh MCP JSON.
+    prompt = f"""Bạn là robot trợ lý tài chính Xiaozhi. Phân tích câu nói của người dùng thành lệnh MCP JSON.
 
-### DAC THU:
-1. Bo tu dem: "robot oi", "nhe", "gium toi", "um"...
-2. Phuc hoi dau tieng Viet bi mat.
-3. Doi so tien bang chu: "hai trieu ruoi"->2500000, "mot cu"->1000000, "ba lit"->300000.
+### ĐẶC THÙ:
+1. Loại bỏ các từ đệm: "robot ơi", "nhé", "giùm tôi", "uhm"...
+2. Phục hồi dấu tiếng Việt bị mất nếu có.
+3. Đổi số tiền bằng chữ sang số: "hai triệu rưỡi" -> 2500000, "một củ" -> 1000000, "ba lít" -> 300000.
 
-### DANH MUC HIEN CO: {categories_list}
-Neu chua co -> TU TAO danh muc moi (viet hoa chu dau, KHONG dung "Khac").
-Luon tra ve 'keyword' la cum tu COT LOI 1-3 tu (chu thuong), vi du: "di choi", "thue nha", "tap gym".
+### DANH MỤC HIỆN CÓ: {categories_list}
+Nếu chưa có danh mục phù hợp -> TỰ TẠO danh mục mới (viết hoa chữ đầu, KHÔNG dùng "Khác").
+Luôn trả về 'keyword' là cụm từ CỐT LÕI từ 1 đến 3 từ (viết chữ thường), ví dụ: "đi chơi", "thuê nhà", "tập gym".
 
-### 7 CONG CU:
-1. thong_ke_thu_chi: xem bao cao. Args: {{}}
-2. huy_giao_dich_gan_nhat: huy/xoa/hoan tac. Args: {{}}
-3. xem_ngan_sach: xem han muc. Args: {{}}
-4. thiet_lap_han_muc: dat han muc. Args: {{category, amount, keyword}}
-5. sua_giao_dich: sua giao dich. Args: {{transaction_id(-1=gan nhat), transaction_type?, amount?, category?, description?, keyword?}}
-6. truy_van_giao_dich: liet ke. Args: {{transaction_type?, category?, time_range("today"/"yesterday"/"this_week"/"this_month"/"all"), limit?, keyword?}}
-7. ghi_nhan_thu_chi: ghi thu/chi. Args: {{transaction_type("thu"/"chi"), amount, category, description, keyword}}
+### 7 CÔNG CỤ:
+1. thong_ke_thu_chi: xem báo cáo tài chính tổng quan. Tham số: {{}}
+2. huy_giao_dich_gan_nhat: hủy, xóa hoặc hoàn tác giao dịch vừa nhập. Tham số: {{}}
+3. xem_ngan_sach: xem báo cáo hạn mức ngân sách tháng này. Tham số: {{}}
+4. thiet_lap_han_muc: đặt hạn mức ngân sách cho một danh mục. Tham số: {{category, amount, keyword}}
+5. sua_giao_dich: sửa thông tin một giao dịch đã lưu. Tham số: {{transaction_id (-1 nếu là giao dịch gần nhất), transaction_type?, amount?, category?, description?, keyword?}}
+6. truy_van_giao_dich: liệt kê và lọc danh sách các giao dịch. Tham số: {{transaction_type?, category?, time_range ("today"/"yesterday"/"this_week"/"this_month"/"all"), limit?, keyword?}}
+7. ghi_nhan_thu_chi: ghi nhận giao dịch thu hoặc chi. Tham số: {{transaction_type ("thu"/"chi"), amount, category, description, keyword}}
 
-### VI DU:
-- "Hom nay di choi het 1 trieu" -> {{"tool":"ghi_nhan_thu_chi","arguments":{{"transaction_type":"chi","amount":1000000,"category":"Di choi","description":"Di choi","keyword":"di choi"}}}}
-- "Thue nha thang nay 5 trieu" -> {{"tool":"ghi_nhan_thu_chi","arguments":{{"transaction_type":"chi","amount":5000000,"category":"Nha o","description":"Thue nha","keyword":"thue nha"}}}}
-- "Dat han muc di choi 2 trieu" -> {{"tool":"thiet_lap_han_muc","arguments":{{"category":"Di choi","amount":2000000,"keyword":"di choi"}}}}
+### VÍ DỤ:
+- "Hom nay di choi het 1 trieu" -> {{"tool":"ghi_nhan_thu_chi","arguments":{{"transaction_type":"chi","amount":1000000,"category":"Đi chơi","description":"Đi chơi","keyword":"đi chơi"}}}}
+- "Thue nha thang nay 5 trieu" -> {{"tool":"ghi_nhan_thu_chi","arguments":{{"transaction_type":"chi","amount":5000000,"category":"Nhà ở","description":"Thuê nhà","keyword":"thuê nhà"}}}}
+- "Dat han muc di choi 2 trieu" -> {{"tool":"thiet_lap_han_muc","arguments":{{"category":"Đi chơi","amount":2000000,"keyword":"đi chơi"}}}}
 
-Tra ve JSON duy nhat, khong markdown:
+Trả về JSON duy nhất, không dùng khối markdown:
 "{message}"
 """
     try:
@@ -204,6 +171,14 @@ Tra ve JSON duy nhat, khong markdown:
         data = json.loads(result_holder[0].text.strip())
         tool_name = data.get("tool")
         args = data.get("arguments", {})
+
+        # Sửa lỗi chính tả tiếng Việt phổ biến cho category và keyword
+        for key in ["category", "keyword", "description"]:
+            if key in args and isinstance(args[key], str):
+                args[key] = args[key].replace("Di chơi", "Đi chơi").replace("di chơi", "đi chơi")
+                args[key] = args[key].replace("Di ăn", "Đi ăn").replace("di ăn", "đi ăn")
+                args[key] = args[key].replace("Di học", "Đi học").replace("di học", "đi học")
+                args[key] = args[key].replace("Di làm", "Đi làm").replace("di làm", "đi làm")
 
         # --- SELF-LEARNING LOOP ---
         learned_keywords = []

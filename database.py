@@ -127,7 +127,15 @@ def init_db():
                 ("cho tiền", "Lương", "thu"), ("ba mẹ cho", "Lương", "thu"), ("bố mẹ cho", "Lương", "thu"),
                 ("tiền tiêu vặt", "Lương", "thu"), ("bán đồ", "Lương", "thu"), ("thanh lý", "Lương", "thu"),
                 ("thu nợ", "Lương", "thu"), ("đòi nợ", "Lương", "thu"), ("tiền lãi", "Lương", "thu"),
-                ("cổ tức", "Lương", "thu"), ("hoàn tiền", "Lương", "thu"), ("trúng thưởng", "Lương", "thu")
+                ("cổ tức", "Lương", "thu"), ("hoàn tiền", "Lương", "thu"), ("trúng thưởng", "Lương", "thu"),
+
+                # --- ĐI CHƠI (chi) ---
+                ("đi chơi", "Đi chơi", "chi"), ("chơi", "Đi chơi", "chi"), ("vui chơi", "Đi chơi", "chi"),
+                ("giải trí", "Đi chơi", "chi"), ("du lịch", "Đi chơi", "chi"), 
+                ("xem phim", "Đi chơi", "chi"), ("cinema", "Đi chơi", "chi"), ("cgv", "Đi chơi", "chi"),
+                ("karaoke", "Đi chơi", "chi"), ("bar", "Đi chơi", "chi"), ("pub", "Đi chơi", "chi"),
+                ("hội chợ", "Đi chơi", "chi"), ("công viên", "Đi chơi", "chi"), ("khu vui chơi", "Đi chơi", "chi"),
+                ("lễ hội", "Đi chơi", "chi")
             ]
             cursor.executemany("INSERT INTO keywords_mapping (keyword, category, type) VALUES (?, ?, ?)", default_keywords)
             
@@ -403,12 +411,19 @@ STANDARD_CATEGORIES_MAP = {
     "ăn uống": "Ăn uống",
     "di chuyen": "Di chuyển",
     "di chuyển": "Di chuyển",
+    "di choi": "Đi chơi",
+    "di chơi": "Đi chơi",
+    "đi chơi": "Đi chơi",
     "hoc tap": "Học tập",
     "học tập": "Học tập",
     "mua sam": "Mua sắm",
     "mua sắm": "Mua sắm",
     "luong": "Lương",
     "lương": "Lương",
+    "nha o": "Nhà ở",
+    "nhà ở": "Nhà ở",
+    "suc khoe": "Sức khỏe",
+    "sức khỏe": "Sức khỏe",
     "khac": "Khác",
     "khác": "Khác"
 }
@@ -503,10 +518,11 @@ def is_category_match(cat1: str, cat2: str) -> bool:
     Ưu tiên khớp chính xác, sau đó khớp chứa nhau, cuối cùng mới dùng từ chung.
     
     Quy tắc an toàn:
-    - "Đi chơi" vs "Đi ăn"  → False ✅ (chỉ chung "đi" – quá ngắn/chung chung)
+    - "Đi chơi" vs "Đi ăn"  → False ✅ (chỉ chung "đi" – động từ chung)
     - "Đi chơi" vs "Đi chơi Đà Lạt" → True ✅ (chuỗi chứa nhau)
-    - "Ăn uống" vs "Ăn vặt" → False ✅ (không có từ nội dung chung ≥4 ký tự)
+    - "Ăn uống" vs "Ăn sáng phở bò" → True ✅ (chung từ gốc ý nghĩa "ăn")
     - "Sức khỏe" vs "Chăm sóc sức khỏe" → True ✅ (chứa "sức khỏe")
+    - "Tiền học" vs "Tiền nhà" → False ✅ (loại trừ từ "tiền" chung chung)
     """
     c1 = cat1.lower().strip()
     c2 = cat2.lower().strip()
@@ -520,18 +536,19 @@ def is_category_match(cat1: str, cat2: str) -> bool:
         return True
 
     # 3. Từ chung có nghĩa:
-    # - Các từ quá ngắn/chung chung bị loại (len < 4 hoặc nằm trong weak_words)
-    # - "đi", "ăn", "mua", "chi", "thu", "và", "cho" → loại bỏ
+    # - Các từ quá ngắn/chung chung bị loại (len < 2 hoặc nằm trong weak_words)
     weak_words = {
         # Giới từ, liên từ
-        "và", "cho", "của", "tại", "ở", "bằng", "với", "các", "những", "để",
-        # Động từ phổ biến, dễ nhầm giữa các danh mục
-        "đi", "ăn", "mua", "chi", "thu", "có", "là", "làm", "dùng", "tiêu",
-        # Từ ngắn < 3 ký tự sẽ bị loại qua len check bên dưới
+        "và", "cho", "của", "tại", "ở", "bằng", "với", "các", "những", "để", "ra", "vào",
+        # Từ chỉ loại tiền/chi phí chung chung
+        "tiền", "phí", "lệ", "khoản", "dịch", "vụ", "chi", "thu",
+        # Động từ quá chung chung, dễ gây nhầm lẫn chéo
+        "đi", "có", "là", "làm", "dùng", "tiêu", "được", "bị", "mua", "bán", "nhận", "gửi"
     }
     
-    words1 = {w for w in c1.split() if w not in weak_words and len(w) >= 4}
-    words2 = {w for w in c2.split() if w not in weak_words and len(w) >= 4}
+    # Cho phép từ có độ dài >= 2 ký tự (để khớp được "ăn", "xe", "phí"...)
+    words1 = {w for w in c1.split() if w not in weak_words and len(w) >= 2}
+    words2 = {w for w in c2.split() if w not in weak_words and len(w) >= 2}
     
     # Chỉ khớp khi có ít nhất 1 từ nội dung ý nghĩa chung
     if words1 and words2 and bool(words1 & words2):
@@ -540,24 +557,76 @@ def is_category_match(cat1: str, cat2: str) -> bool:
     return False
 
 
+def fallback_matching_budget_to_llm(category: str, budget_categories: List[str]) -> Optional[str]:
+    """Sử dụng Gemini LLM làm dự phòng để đối chiếu danh mục với nhóm ngân sách hiện có"""
+    import os
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key or api_key == "YOUR_GEMINI_API_KEY":
+        return None
+    try:
+        import google.generativeai as genai
+        import json
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        prompt = f"""Bạn là trợ lý tài chính thông minh. Hãy phân tích xem danh mục giao dịch "{category}" có thể được xếp vào một trong các danh mục ngân sách hiện có sau đây hay không:
+{budget_categories}
+
+Hãy tìm danh mục ngân sách phù hợp nhất cho "{category}".
+Ví dụ:
+- "sách giáo khoa" -> "Học tập"
+- "tiền điện" -> "Điện nước" hoặc "Sinh hoạt"
+- "ăn vặt" -> "Ăn uống"
+
+Hãy trả về kết quả dưới dạng JSON duy nhất, không markdown:
+{{"matched_category": "Tên danh mục khớp trong danh sách trên hoặc null nếu không phù hợp"}}"""
+
+        response = model.generate_content(
+            prompt, generation_config={"response_mime_type": "application/json"}
+        )
+        data = json.loads(response.text.strip())
+        matched_cat = data.get("matched_category")
+        if matched_cat and matched_cat in budget_categories:
+            return matched_cat
+    except Exception as e:
+        logging.error(f"Lỗi khi fallback qua LLM đối chiếu ngân sách: {e}")
+    return None
+
+
 def find_matching_budget(category: str) -> Optional[Tuple[str, float]]:
-    """Tìm hạn mức chi tiêu khớp nhất với danh mục chi tiêu"""
+    """Tìm hạn mức chi tiêu khớp nhất với danh mục chi tiêu (Có tự học và tự động fallback sang LLM)"""
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT category, amount FROM ngan_sach")
         rows = cursor.fetchall()
-        
-        # Khớp chính xác trước
+        if not rows:
+            return None
+            
+        # 1. Khớp chính xác trước
         for row_cat, amount in rows:
             if row_cat.lower() == category.lower():
                 return row_cat, amount
                 
-        # Khớp tương đối
+        # 2. Khớp tương đối nội bộ qua logic từ gốc
         for row_cat, amount in rows:
             if is_category_match(row_cat, category):
                 return row_cat, amount
                 
+        # 3. Fallback sang LLM đối chiếu & Tự động lưu keyword mapping nếu tìm thấy
+        budget_categories = [row[0] for row in rows]
+        matched_cat = fallback_matching_budget_to_llm(category, budget_categories)
+        if matched_cat:
+            for row_cat, amount in rows:
+                if row_cat == matched_cat:
+                    # Tự động học từ khóa mới để lần sau khớp cục bộ (Keyword-First)
+                    try:
+                        add_keyword_mapping(category.lower(), matched_cat, "chi")
+                        logging.info(f"[SELF-LEARNING] Đã tự động học từ khóa mới từ LLM budget fallback: '{category.lower()}' -> '{matched_cat}'")
+                    except Exception as learn_err:
+                        logging.warning(f"Không thể tự động lưu từ khóa học được: {learn_err}")
+                    return row_cat, amount
+                    
         return None
     except Exception as e:
         logging.error(f"Lỗi tìm hạn mức khớp: {e}")
