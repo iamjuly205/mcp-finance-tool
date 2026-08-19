@@ -276,44 +276,18 @@ def simulate_chat_api(chat: ChatInput):
                 logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: GEMINI API (LLM)")
 
             
-        # 3. Nếu vẫn không nhận diện được (Gemini lỗi/không có API key), dùng Regex + Dynamic Category từ DB làm dự phòng
-        if not parsed:
-            amount = extract_amount(msg)
-            if amount > 0:
-                msg_lower = msg.lower()
-
-                # Nhận diện loại giao dịch (thu/chi) với rule chính xác giống keyword_parser
-                thu_keywords = ["lương", "nhận lương", "nhận tiền", "kiếm được", "thưởng", "được cho", "được tặng", "thu nhập"]
-                tx_type = "chi"
-                import re
-                if any(re.search(r'\b' + re.escape(kw) + r'\b', msg_lower) for kw in thu_keywords):
-                    tx_type = "thu"
-                elif re.search(r'\bthu\b', msg_lower) and not re.search(r'\b(thu\s*chi|thuê)\b', msg_lower):
-                    tx_type = "thu"
-
-                # FIX R2: Tìm category từ DB (bao gồm cả dynamic categories)
-                category = detect_category(msg_lower, tx_type) or "Khác"
-                
-                parsed = {
-                    "tool": "ghi_nhan_thu_chi",
-                    "arguments": {
-                        "transaction_type": tx_type,
-                        "amount": amount,
-                        "category": category,
-                        "description": msg.strip()
-                    }
-                }
-                source = "regex"
-                print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
-                print(">>> KẾT QUẢ: Fallback sang REGEX MATCHING (với Dynamic Category DB)!\n", flush=True)
-                write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK (category={category})")
-                logging.info(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Định tuyến bằng: REGEX FALLBACK (category={category})")
-        
+        # 3. Không nhận diện được (Keyword và LLM đều không xử lý được)
         if not parsed:
             print(f"\n>>> [CHỌN ĐƯỜNG TRUYỀN] Câu lệnh: \"{msg}\"", flush=True)
             print(">>> KẾT QUẢ: Không tìm thấy phương thức định tuyến phù hợp!\n", flush=True)
             write_routing_log(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Không nhận diện được!")
             logging.warning(f"[CHAT ROUTING] Câu lệnh: '{msg}' -> Không nhận diện được!")
+            return {
+                "tts": "Xin lỗi, tôi chưa nhận diện được yêu cầu của bạn. Bạn có thể thử lại bằng câu nói khác rõ hơn không?",
+                "source": "none",
+                "rpc_call": None,
+                "rpc_response": None
+            }
 
                 
         # 4. Thực thi công cụ đã được xác định

@@ -131,21 +131,28 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
 
     # 3. TOOL: xem_ngan_sach
     if has_keyword(msg_lower, ["xem ngân sách", "báo cáo ngân sách", "tình hình ngân sách", "còn bao nhiêu hạn mức",
-                               "xem ngan sach", "han muc"]):
+                               "xem ngan sach"]):
         return {"tool": "xem_ngan_sach", "arguments": {}}
 
     # 4. TOOL: thiet_lap_han_muc (Set Budget)
-    if has_keyword(msg_lower, ["cài hạn mức", "đặt hạn mức", "đặt ngân sách", "cài ngân sách",
-                               "thiết lập hạn mức", "giới hạn chi tiêu", "ngân sách cho",
-                               "cai han muc", "dat han muc", "thiet lap han muc"]):
+    budget_keywords = [
+        "cài hạn mức", "đặt hạn mức", "đặt ngân sách", "cài ngân sách",
+        "thiết lập hạn mức", "thiết lập hạng mức", "thiết lập hạng mưc",
+        "thiết lập ngân sách", "thiết lập định mức", "thiết lập",
+        "giới hạn chi tiêu", "ngân sách cho", "định mức cho", "định mức",
+        "hạn mức cho", "hạn mức", "hạng mức", "hạng mưc",
+        "cai han muc", "dat han muc", "thiet lap han muc", "hang muc", "han muc", "dinh muc"
+    ]
+    if has_keyword(msg_lower, budget_keywords):
         amount = extract_amount(message)
         category = detect_category(msg_lower, "chi")
         if amount > 0 and category and category != "Khác":
+            # Tìm thấy đủ thông tin: trả về tool thiet_lap_han_muc trực tiếp
             return {
                 "tool": "thiet_lap_han_muc",
                 "arguments": {"category": category, "amount": amount}
             }
-        # Nếu không tìm được category -> trả None để LLM xử lý (tốt hơn)
+        # Thiếu thông tin (category chưa có trong DB hoặc thiếu amount) -> Gemini LLM xử lý
         return None
 
     # 5. TOOL: sua_giao_dich (Edit)
@@ -219,6 +226,16 @@ def route_intent_with_keywords(message: str) -> Optional[Dict[str, Any]]:
         }
 
     # 7. TOOL: ghi_nhan_thu_chi (Giao dịch thu/chi thông thường)
+    # Guard: Nếu câu chứa từ khóa ngân sách/cài đặt -> KHÔNG phải ghi nhận thủ công
+    non_ghi_nhan_keywords = [
+        "hạn mức", "hạng mức", "hạng mưc", "ngân sách", "định mức",
+        "thiết lập", "cài đặt", "giới hạn", "sửa giao dịch", "cập nhật",
+        "liệt kê", "danh sách", "truy vấn", "xem giao dịch", "thống kê",
+        "han muc", "hang muc", "thiet lap", "ngan sach", "dinh muc"
+    ]
+    if has_keyword(msg_lower, non_ghi_nhan_keywords):
+        return None  # Để Gemini LLM xử lý chính xác hơn
+
     amount = extract_amount(message)
     if amount > 0:
         # FIX K1: Phát hiện thu nhập chính xác hơn – tránh false positive: "thuê nhà" → vẫn là chi

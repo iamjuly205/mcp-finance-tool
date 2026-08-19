@@ -71,3 +71,18 @@ def test_route_intent_edit_transaction():
     assert res["tool"] == "sua_giao_dich"
     assert res["arguments"]["transaction_id"] == -1
     assert res["arguments"]["amount"] == 100000.0
+
+def test_route_intent_set_budget_typo():
+    """Câu lệnh thiết lập hạn mức có lỗi đánh máy 'hạng mưc' vẫn phải khớp thiet_lap_han_muc."""
+    res = route_intent_with_keywords("Thiết lập hạng mưc ăn uống 2 triệu.")
+    # Nếu category "Ăn uống" có trong DB thì trả thiet_lap_han_muc, nếu không thì None (để LLM xử lý)
+    # Dù sao cũng không được nhầm thành ghi_nhan_thu_chi
+    assert res is None or res["tool"] == "thiet_lap_han_muc"
+
+def test_non_ghi_nhan_intent_does_not_fall_through():
+    """Câu lệnh thiết lập hạn mức KHÔNG ĐƯỢC nhận nhầm thành ghi_nhan_thu_chi."""
+    res = route_intent_with_keywords("Thiết lập hạn mức đi chơi 5 triệu.")
+    # Phải là None (→ LLM) hoặc thiet_lap_han_muc, tuyệt đối không phải ghi_nhan_thu_chi
+    assert res is None or res["tool"] == "thiet_lap_han_muc"
+    if res is not None:
+        assert res["tool"] != "ghi_nhan_thu_chi"

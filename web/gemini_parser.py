@@ -14,8 +14,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 genai_available = False
 if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY":
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
+        from google import genai as _genai_sdk
+        _genai_sdk.Client(api_key=GEMINI_API_KEY)  # test connection
         genai_available = True
         logging.info("Gemini API da duoc cau hinh thanh cong.")
     except Exception as e:
@@ -143,18 +143,23 @@ Trả về JSON duy nhất, không dùng khối markdown:
 "{message}"
 """
     try:
-        import google.generativeai as genai
+        from google import genai as _genai_sdk
         import threading
-        model = genai.GenerativeModel("gemini-2.5-flash")
 
         result_holder = [None]
         error_holder = [None]
 
         def call_gemini():
             try:
-                result_holder[0] = model.generate_content(
-                    prompt, generation_config={"response_mime_type": "application/json"}
+                client = _genai_sdk.Client(api_key=GEMINI_API_KEY)
+                response = client.models.generate_content(
+                    model="gemini-3.6-flash",
+                    contents=prompt,
+                    config=_genai_sdk.types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
                 )
+                result_holder[0] = response.text
             except Exception as e:
                 error_holder[0] = e
 
@@ -168,7 +173,7 @@ Trả về JSON duy nhất, không dùng khối markdown:
             logging.warning("[GEMINI TIMEOUT] Gemini API khong phan hoi trong 15 giay.")
             return None
 
-        data = json.loads(result_holder[0].text.strip())
+        data = json.loads(result_holder[0].strip())
         tool_name = data.get("tool")
         args = data.get("arguments", {})
 
