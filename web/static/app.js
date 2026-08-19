@@ -352,8 +352,8 @@ function renderDonutChart(transactions) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    // Filter spent transactions ('chi')
-    const spentTxs = transactions.filter(t => t.type === 'chi');
+    // Filter spent transactions ('chi') and amount > 0
+    const spentTxs = transactions.filter(t => t.type === 'chi' && t.amount > 0);
 
     // Group by category
     const categoryTotals = {};
@@ -361,14 +361,18 @@ function renderDonutChart(transactions) {
         categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
     });
 
-    const labels = Object.keys(categoryTotals);
-    const data = Object.values(categoryTotals);
+    // Sort categories by total amount descending
+    const sortedEntries = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+
+    const labels = sortedEntries.map(e => e[0]);
+    const data = sortedEntries.map(e => e[1]);
+    const total = data.reduce((sum, val) => sum + val, 0);
 
     if (expenseChartInstance) {
         expenseChartInstance.destroy();
     }
 
-    if (labels.length === 0) {
+    if (labels.length === 0 || total === 0) {
         expenseChartInstance = new Chart(ctx, {
             type: 'doughnut',
             data: {
@@ -420,7 +424,7 @@ function renderDonutChart(transactions) {
                 data: data,
                 backgroundColor: colors,
                 borderColor: 'rgba(5, 8, 7, 0.9)',
-                borderWidth: 2,
+                borderWidth: 1,
                 hoverOffset: 6
             }]
         },
@@ -433,14 +437,34 @@ function renderDonutChart(transactions) {
                     labels: {
                         color: '#F3F4F6',
                         font: { family: 'Outfit', size: 12 },
-                        padding: 15
+                        padding: 15,
+                        generateLabels: function(chart) {
+                            const dataSet = chart.data.datasets[0];
+                            return chart.data.labels.map((label, i) => {
+                                const val = dataSet.data[i];
+                                const pct = total > 0 ? (val / total * 100) : 0;
+                                const pctStr = pct < 0.1 ? '<0.1%' : `${pct.toFixed(1)}%`;
+                                const fill = dataSet.backgroundColor[i];
+                                return {
+                                    text: `${label} (${pctStr})`,
+                                    fillStyle: fill,
+                                    strokeStyle: fill,
+                                    lineWidth: 0,
+                                    fontColor: '#F3F4F6',
+                                    hidden: isNaN(dataSet.data[i]) || chart.getDatasetMeta(0).data[i].hidden,
+                                    index: i
+                                };
+                            });
+                        }
                     }
                 },
                 tooltip: {
                     callbacks: {
                         label: function (context) {
                             const val = context.raw;
-                            return ` ${context.label}: ${formatCurrency(val)}đ`;
+                            const pct = total > 0 ? (val / total * 100) : 0;
+                            const pctStr = pct < 0.1 ? '<0.1%' : `${pct.toFixed(1)}%`;
+                            return ` ${context.label}: ${formatCurrency(val)}đ (${pctStr})`;
                         }
                     }
                 }
